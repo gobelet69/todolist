@@ -11,8 +11,8 @@
     ],
     "routes": [
         {
-            "pattern": "yourdomain.com/*",
-            "zone_name": "yourdomain.com"
+            "pattern": "111iridescence.org/todo*",
+            "zone_name": "111iridescence.org"
         }
     ]
 }
