@@ -8,6 +8,12 @@ export default {
     const url = new URL(req.url);
     const method = req.method;
 
+    // Normalize path: strip /todo prefix if present
+    let path = url.pathname;
+    if (path.startsWith('/todo')) {
+      path = path.substring(5) || '/';
+    }
+
     // SESSION MANAGEMENT
     const cookie = req.headers.get('Cookie');
     const sessionId = cookie ? cookie.split(';').find(c => c.trim().startsWith('sess='))?.split('=')[1] : null;
@@ -15,7 +21,7 @@ export default {
     if (sessionId) user = await env.DB.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').bind(sessionId, Date.now()).first();
 
     // PUBLIC ROUTES
-    if (url.pathname === '/login' && method === 'POST') {
+    if (path === '/login' && method === 'POST') {
       const fd = await req.formData();
       const dbUser = await env.DB.prepare('SELECT * FROM users WHERE username = ? AND password = ?').bind(fd.get('u'), await hash(fd.get('p'))).first();
       if (!dbUser) return new Response('Invalid credentials', { status: 401 });
@@ -24,7 +30,7 @@ export default {
       return new Response('OK', { headers: { 'Set-Cookie': `sess=${newSess}; HttpOnly; Secure; SameSite=Strict; Path=/` } });
     }
 
-    if (url.pathname === '/register' && method === 'POST') {
+    if (path === '/register' && method === 'POST') {
       const fd = await req.formData();
       const existing = await env.DB.prepare('SELECT username FROM users WHERE username = ?').bind(fd.get('u')).first();
       if (existing) return new Response('Username taken', { status: 400 });
@@ -32,7 +38,7 @@ export default {
       return new Response('OK');
     }
 
-    if (url.pathname === '/logout') {
+    if (path === '/logout') {
       if (sessionId) await env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run();
       return new Response('Logged out', { status: 302, headers: { 'Location': '/', 'Set-Cookie': 'sess=; Max-Age=0; Path=/' } });
     }
@@ -41,21 +47,21 @@ export default {
     if (!user) return new Response(renderLogin(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 
     // API: BOARD
-    if (url.pathname === '/api/board/create' && method === 'POST') {
+    if (path === '/api/board/create' && method === 'POST') {
       const fd = await req.formData();
       const id = crypto.randomUUID();
       await env.DB.prepare('INSERT INTO boards (id, username, name, created_at) VALUES (?, ?, ?, ?)').bind(id, user.username, fd.get('name'), Date.now()).run();
       return new Response(JSON.stringify({ id }), { headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (url.pathname === '/api/board/delete' && method === 'POST') {
+    if (path === '/api/board/delete' && method === 'POST') {
       const fd = await req.formData();
       await env.DB.prepare('DELETE FROM boards WHERE id = ? AND username = ?').bind(fd.get('id'), user.username).run();
       return new Response('OK');
     }
 
     // API: LIST
-    if (url.pathname === '/api/list/create' && method === 'POST') {
+    if (path === '/api/list/create' && method === 'POST') {
       const fd = await req.formData();
       const { results: lists } = await env.DB.prepare('SELECT * FROM lists WHERE board_id = ? ORDER BY position ASC').bind(fd.get('boardId')).all();
       const pos = lists.length > 0 ? Math.max(...lists.map(l => l.position)) + 1 : 0;
@@ -63,20 +69,20 @@ export default {
       return new Response('OK');
     }
 
-    if (url.pathname === '/api/list/delete' && method === 'POST') {
+    if (path === '/api/list/delete' && method === 'POST') {
       const fd = await req.formData();
       await env.DB.prepare('DELETE FROM lists WHERE id = ? AND username = ?').bind(fd.get('id'), user.username).run();
       return new Response('OK');
     }
 
-    if (url.pathname === '/api/list/rename' && method === 'POST') {
+    if (path === '/api/list/rename' && method === 'POST') {
       const fd = await req.formData();
       await env.DB.prepare('UPDATE lists SET name = ? WHERE id = ? AND username = ?').bind(fd.get('name'), fd.get('id'), user.username).run();
       return new Response('OK');
     }
 
     // API: CARD
-    if (url.pathname === '/api/card/create' && method === 'POST') {
+    if (path === '/api/card/create' && method === 'POST') {
       const fd = await req.formData();
       const lid = fd.get('listId');
       const { results: cards } = await env.DB.prepare('SELECT * FROM cards WHERE list_id = ? ORDER BY position ASC').bind(lid).all();
@@ -86,19 +92,19 @@ export default {
       return new Response('OK');
     }
 
-    if (url.pathname === '/api/card/update' && method === 'POST') {
+    if (path === '/api/card/update' && method === 'POST') {
       const fd = await req.formData();
       await env.DB.prepare('UPDATE cards SET title = ?, description = ? WHERE id = ? AND username = ?').bind(fd.get('title'), fd.get('description'), fd.get('id'), user.username).run();
       return new Response('OK');
     }
 
-    if (url.pathname === '/api/card/delete' && method === 'POST') {
+    if (path === '/api/card/delete' && method === 'POST') {
       const fd = await req.formData();
       await env.DB.prepare('DELETE FROM cards WHERE id = ? AND username = ?').bind(fd.get('id'), user.username).run();
       return new Response('OK');
     }
 
-    if (url.pathname === '/api/card/move' && method === 'POST') {
+    if (path === '/api/card/move' && method === 'POST') {
       const fd = await req.formData();
       const cid = fd.get('cardId'), nlid = fd.get('newListId'), npos = parseInt(fd.get('newPosition'));
       const card = await env.DB.prepare('SELECT * FROM cards WHERE id = ?').bind(cid).first();
@@ -108,27 +114,28 @@ export default {
       return new Response('OK');
     }
 
-    if (url.pathname === '/api/password' && method === 'POST') {
+    if (path === '/api/password' && method === 'POST') {
       const fd = await req.formData();
       await env.DB.prepare('UPDATE users SET password = ? WHERE username = ?').bind(await hash(fd.get('p')), user.username).run();
       return new Response('OK');
     }
 
     // PAGES
-    if (url.pathname === '/settings') return new Response(renderSettings(user), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    const basePath = url.pathname.startsWith('/todo') ? '/todo' : '';
+    if (path === '/settings') return new Response(renderSettings(user, basePath), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 
-    if (url.pathname.startsWith('/board/')) {
-      const bid = url.pathname.split('/board/')[1];
+    if (path.startsWith('/board/')) {
+      const bid = path.split('/board/')[1];
       const board = await env.DB.prepare('SELECT * FROM boards WHERE id = ? AND username = ?').bind(bid, user.username).first();
       if (!board) return new Response('404', { status: 404 });
       const { results: lists } = await env.DB.prepare('SELECT * FROM lists WHERE board_id = ? ORDER BY position ASC').bind(bid).all();
       const { results: cards } = await env.DB.prepare('SELECT * FROM cards WHERE board_id = ? ORDER BY position ASC').bind(bid).all();
-      return new Response(renderBoard(user, board, lists, cards), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      return new Response(renderBoard(user, board, lists, cards, basePath), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
-    if (url.pathname === '/' || url.pathname === '') {
+    if (path === '/' || url.pathname === '') {
       const { results: boards } = await env.DB.prepare('SELECT * FROM boards WHERE username = ? ORDER BY created_at DESC').bind(user.username).all();
-      return new Response(renderDash(user, boards), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      return new Response(renderDash(user, boards, basePath), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
     return new Response('404', { status: 404 });
@@ -139,6 +146,9 @@ async function hash(str) {
   const buf = new TextEncoder().encode(str);
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buf))).map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+// Helper: Get base path prefix
+const BASE_PATH = (path) => path.startsWith('/todo') ? '/todo' : '';
 
 // CSS - Simple Dark Theme (like Habit Tracker)
 const CSS = `
@@ -191,11 +201,11 @@ a{color:var(--s);text-decoration:none}
 .btn-danger{background:var(--err)}
 `;
 
-function renderNav(active) {
+function renderNav(active, basePath = '') {
   return `<div style="display:flex;gap:10px">
-    <a href="/" class="nav-link ${active === 'boards' ? 'active' : ''}">📋 Boards</a>
-    <a href="/settings" class="nav-link ${active === 'settings' ? 'active' : ''}">⚙ Settings</a>
-    <a href="/logout" style="color:var(--err);align-self:center;margin-left:auto">Logout</a>
+    <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">📋 Boards</a>
+    <a href="${basePath}/settings" class="nav-link ${active === 'settings' ? 'active' : ''}">⚙ Settings</a>
+    <a href="${basePath}/logout" style="color:var(--err);align-self:center;margin-left:auto">Logout</a>
   </div>`;
 }
 
@@ -223,18 +233,19 @@ function renderLogin() {
       <div id="msg" style="color:var(--err);margin-top:10px"></div>
     </div>
     <script>
+      const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
       function toggleReg(){
         document.getElementById('forms').style.display = document.getElementById('forms').style.display === 'none' ? 'block' : 'none';
         document.getElementById('reg').style.display = document.getElementById('reg').style.display === 'none' ? 'block' : 'none';
         document.getElementById('msg').innerText = '';
       }
       async function doLogin(f){
-        const r = await fetch('/login',{method:'POST',body:new FormData(f)});
+        const r = await fetch(BASE + '/login',{method:'POST',body:new FormData(f)});
         if(r.ok) location.reload();
         else document.getElementById('msg').innerText = 'Access Denied';
       }
       async function doReg(f){
-        const r = await fetch('/register',{method:'POST',body:new FormData(f)});
+        const r = await fetch(BASE + '/register',{method:'POST',body:new FormData(f)});
         if(r.ok){ alert('Account created! Please log in.'); toggleReg(); }
         else document.getElementById('msg').innerText = 'Username taken';
       }
@@ -242,11 +253,11 @@ function renderLogin() {
   </body></html>`;
 }
 
-function renderSettings(user) {
+function renderSettings(user, basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>Settings</title><style>${CSS}</style></head><body>
     <header class="row card" style="padding:15px">
       <div><strong>Settings</strong> | ${user.username}</div>
-      ${renderNav('settings')}
+      ${renderNav('settings', basePath)}
     </header>
     <div class="card">
       <h3>Change Password</h3>
@@ -257,18 +268,18 @@ function renderSettings(user) {
     </div>
     <script>
       async function changePw(f){
-        const r = await fetch('/api/password',{method:'POST',body:new FormData(f)});
+        const r = await fetch(BASE + '/api/password',{method:'POST',body:new FormData(f)});
         if(r.ok) alert('Password updated!');
       }
     </script>
   </body></html>`;
 }
 
-function renderDash(user, boards) {
+function renderDash(user, boards, basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>Boards</title><style>${CSS}</style></head><body>
     <header class="row card" style="padding:15px">
       <div><strong>📋 My Boards</strong> | ${user.username}</div>
-      ${renderNav('boards')}
+      ${renderNav('boards', basePath)}
     </header>
     <div style="margin-bottom:20px">
       <button onclick="showModal()">+ New Board</button>
@@ -313,6 +324,7 @@ function renderDash(user, boards) {
     </div>
 
     <script>
+      const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
       let confirmCallback = null;
 
       function showConfirm(message, onConfirm) {
@@ -334,17 +346,17 @@ function renderDash(user, boards) {
       function showModal(){ modal.classList.add('active'); }
       function hideModal(){ modal.classList.remove('active'); }
       async function createBoard(f){
-        const r = await fetch('/api/board/create',{method:'POST',body:new FormData(f)});
+        const r = await fetch(BASE + '/api/board/create',{method:'POST',body:new FormData(f)});
         if(r.ok){
           const d = await r.json();
-          location.href = '/board/' + d.id;
+          location.href = BASE + '/board/' + d.id;
         }
       }
       function deleteBoard(id,name){
         showConfirm('Delete board "' + name + '"? All lists and cards will be deleted.', async () => {
           const fd = new FormData();
           fd.append('id', id);
-          await fetch('/api/board/delete',{method:'POST',body:fd});
+          await fetch(BASE + '/api/board/delete',{method:'POST',body:fd});
           location.reload();
         });
       }
@@ -352,7 +364,7 @@ function renderDash(user, boards) {
   </body></html>`;
 }
 
-function renderBoard(user, board, lists, cards) {
+function renderBoard(user, board, lists, cards, basePath = '') {
   const cardsByList = {};
   cards.forEach(c => {
     if (!cardsByList[c.list_id]) cardsByList[c.list_id] = [];
@@ -362,7 +374,7 @@ function renderBoard(user, board, lists, cards) {
   return `<!DOCTYPE html><html lang="en"><head><title>${board.name}</title><style>${CSS}</style></head><body>
     <header class="row card" style="padding:15px">
       <div><strong>${board.name}</strong> | ${user.username}</div>
-      ${renderNav('')}
+      ${renderNav('', basePath)}
     </header>
 
     <div style="margin-bottom:15px">
@@ -464,6 +476,7 @@ function renderBoard(user, board, lists, cards) {
     </div>
 
     <script>
+      const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
       const boardId = '${board.id}';
       let draggedCardId = null;
       let confirmCallback = null;
@@ -491,7 +504,7 @@ function renderBoard(user, board, lists, cards) {
       async function createList(f){
         const fd = new FormData(f);
         fd.append('boardId', boardId);
-        await fetch('/api/list/create',{method:'POST',body:fd});
+        await fetch(BASE + '/api/list/create',{method:'POST',body:fd});
         location.reload();
       }
 
@@ -499,7 +512,7 @@ function renderBoard(user, board, lists, cards) {
         showConfirm('Delete list "' + name + '"? All cards will be deleted.', async () => {
           const fd = new FormData();
           fd.append('id', id);
-          await fetch('/api/list/delete',{method:'POST',body:fd});
+          await fetch(BASE + '/api/list/delete',{method:'POST',body:fd});
           location.reload();
         });
       }
@@ -508,11 +521,11 @@ function renderBoard(user, board, lists, cards) {
         const fd = new FormData();
         fd.append('id', id);
         fd.append('name', name);
-        await fetch('/api/list/rename',{method:'POST',body:fd});
+        await fetch(BASE + '/api/list/rename',{method:'POST',body:fd});
       }
 
       async function createCard(f){
-        await fetch('/api/card/create',{method:'POST',body:new FormData(f)});
+        await fetch(BASE + '/api/card/create',{method:'POST',body:new FormData(f)});
         location.reload();
       }
 
@@ -524,7 +537,7 @@ function renderBoard(user, board, lists, cards) {
       }
 
       async function updateCard(f){
-        await fetch('/api/card/update',{method:'POST',body:new FormData(f)});
+        await fetch(BASE + '/api/card/update',{method:'POST',body:new FormData(f)});
         location.reload();
       }
 
@@ -532,7 +545,7 @@ function renderBoard(user, board, lists, cards) {
         showConfirm('Delete this card?', async () => {
           const fd = new FormData();
           fd.append('id', id);
-          await fetch('/api/card/delete',{method:'POST',body:fd});
+          await fetch(BASE + '/api/card/delete',{method:'POST',body:fd});
           location.reload();
         });
       }
@@ -564,7 +577,7 @@ function renderBoard(user, board, lists, cards) {
         fd.append('cardId', draggedCardId);
         fd.append('newListId', newListId);
         fd.append('newPosition', newPosition);
-        await fetch('/api/card/move',{method:'POST',body:fd});
+        await fetch(BASE + '/api/card/move',{method:'POST',body:fd});
         location.reload();
       }
     </script>
