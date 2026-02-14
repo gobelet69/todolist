@@ -178,19 +178,21 @@ a{color:var(--s);text-decoration:none}
 .board-item h3{margin-bottom:10px}
 .board-item .meta{color:#777;font-size:0.85em;margin-bottom:15px}
 .kanban{display:flex;gap:15px;overflow-x:auto;padding:10px 0}
-.list{min-width:300px;max-width:300px;background:var(--card);border:1px solid #333;border-radius:8px;display:flex;flex-direction:column;max-height:calc(100vh - 180px)}
-.list-header{background:#2a2a2a;padding:12px 15px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #333}
+.list{min-width:300px;max-width:300px;background:var(--card);border:1px solid #333;border-radius:8px;display:flex;flex-direction:column;max-height:calc(100vh - 180px);transition:transform 0.2s,opacity 0.2s}
+.list.dragging{opacity:0.4;transform:scale(0.95)}
+.list.drag-over{border:2px solid var(--p);background:#252525}
+.list-header{background:#2a2a2a;padding:12px 15px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #333;user-select:none}
 .list-header input{background:transparent;border:none;color:var(--txt);font-weight:bold;font-size:1em;padding:0;margin:0;flex:1}
 .list-header input:focus{outline:none}
 .list-header .count{background:#333;color:#aaa;padding:2px 8px;border-radius:10px;font-size:0.75em;margin:0 10px}
 .list-header button{background:transparent;color:#777;border:none;padding:4px;font-size:0.9em;cursor:pointer}
 .list-header button:hover{color:var(--err)}
 .cards{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
-.task-card{background:#2a2a2a;border:1px solid #333;border-radius:6px;padding:12px;cursor:grab;position:relative}
+.task-card{background:#2a2a2a;border:1px solid #333;border-radius:6px;padding:12px;cursor:grab;position:relative;transition:opacity 0.2s,transform 0.2s}
 .task-card:hover{border-color:#444}
 .task-card:hover .card-actions{opacity:1}
 .task-card:active{cursor:grabbing}
-.task-card.dragging{opacity:0.5}
+.task-card.dragging{opacity:0.4;transform:scale(0.95)}
 .card-title{font-weight:600;margin-bottom:6px}
 .card-desc{color:#aaa;font-size:0.85em;margin-top:6px}
 .card-actions{opacity:0;display:flex;gap:6px;margin-top:8px;transition:opacity 0.2s;pointer-events:auto}
@@ -391,9 +393,9 @@ function renderBoard(user, board, lists, cards, basePath = '') {
       <button onclick="showListModal()">+ Add List</button>
     </div>
 
-    <div class="kanban" ondrop="dropList(event)" ondragover="allowDrop(event)">
+    <div class="kanban" ondrop="dropList(event)" ondragover="dragOverList(event)">
       ${lists.map(list => `
-        <div class="list" data-list-id="${list.id}" draggable="true" ondragstart="dragList(event,'${list.id}')">
+        <div class="list" data-list-id="${list.id}" draggable="true" ondragstart="dragList(event,'${list.id}')" ondragend="dragEndList(event)">
           <div class="list-header" style="cursor:grab">
             <input value="${list.name}" onblur="renameList('${list.id}',this.value)" ondragstart="event.stopPropagation()" draggable="false">
             <span class="count">${(cardsByList[list.id] || []).length}</span>
@@ -599,9 +601,49 @@ function renderBoard(user, board, lists, cards, basePath = '') {
       }
 
       // List drag and drop
+      let draggedListElement = null;
+
       function dragList(e, listId){
         draggedListId = listId;
+        draggedListElement = e.target;
         e.target.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      }
+
+      function dragOverList(e){
+        e.preventDefault();
+        if (!draggedListId) return;
+        
+        const kanban = e.currentTarget;
+        const afterElement = getDragAfterElement(kanban, e.clientX);
+        
+        // Remove all drag-over classes
+        kanban.querySelectorAll('.list').forEach(list => list.classList.remove('drag-over'));
+        
+        // Add drag-over to target
+        if (afterElement == null) {
+          const lastList = kanban.querySelector('.list:last-child');
+          if (lastList && lastList !== draggedListElement) {
+            lastList.classList.add('drag-over');
+          }
+        } else if (afterElement !== draggedListElement) {
+          afterElement.classList.add('drag-over');
+        }
+      }
+
+      function getDragAfterElement(container, x) {
+        const draggableElements = [...container.querySelectorAll('.list:not(.dragging)')];
+        
+        return draggableElements.reduce((closest, child) => {
+          const box = child.getBoundingClientRect();
+          const offset = x - box.left - box.width / 2;
+          
+          if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+          } else {
+            return closest;
+          }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
       }
 
       async function dropList(e){
@@ -609,11 +651,13 @@ function renderBoard(user, board, lists, cards, basePath = '') {
         if (!draggedListId) return;
         
         const kanban = e.currentTarget;
-        const lists = Array.from(kanban.children);
+        const lists = Array.from(kanban.querySelectorAll('.list'));
         const dropX = e.clientX;
         let newPosition = 0;
 
+        // Calculate position based on drop location
         for(let i = 0; i < lists.length; i++){
+          if (lists[i] === draggedListElement) continue;
           const rect = lists[i].getBoundingClientRect();
           if(dropX < rect.left + rect.width / 2){
             newPosition = i;
@@ -622,12 +666,25 @@ function renderBoard(user, board, lists, cards, basePath = '') {
           newPosition = i + 1;
         }
 
+        // Clean up visual feedback
+        kanban.querySelectorAll('.list').forEach(list => {
+          list.classList.remove('dragging', 'drag-over');
+        });
+
         const fd = new FormData();
         fd.append('listId', draggedListId);
         fd.append('newPosition', newPosition);
         await fetch(BASE + '/api/list/reorder',{method:'POST',body:fd});
         draggedListId = null;
+        draggedListElement = null;
         location.reload();
+      }
+
+      function dragEndList(e){
+        e.target.classList.remove('dragging');
+        document.querySelectorAll('.list').forEach(list => list.classList.remove('drag-over'));
+        draggedListId = null;
+        draggedListElement = null;
       }
     </script>
   </body></html>`;
