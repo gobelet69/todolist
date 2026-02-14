@@ -81,6 +81,16 @@ export default {
       return new Response('OK');
     }
 
+    if (path === '/api/list/reorder' && method === 'POST') {
+      const fd = await req.formData();
+      const lid = fd.get('listId'), npos = parseInt(fd.get('newPosition'));
+      const list = await env.DB.prepare('SELECT * FROM lists WHERE id = ?').bind(lid).first();
+      await env.DB.prepare('UPDATE lists SET position = position - 1 WHERE board_id = ? AND position > ?').bind(list.board_id, list.position).run();
+      await env.DB.prepare('UPDATE lists SET position = position + 1 WHERE board_id = ? AND position >= ?').bind(list.board_id, npos).run();
+      await env.DB.prepare('UPDATE lists SET position = ? WHERE id = ?').bind(npos, lid).run();
+      return new Response('OK');
+    }
+
     // API: CARD
     if (path === '/api/card/create' && method === 'POST') {
       const fd = await req.formData();
@@ -381,13 +391,13 @@ function renderBoard(user, board, lists, cards, basePath = '') {
       <button onclick="showListModal()">+ Add List</button>
     </div>
 
-    <div class="kanban">
+    <div class="kanban" ondrop="dropList(event)" ondragover="allowDrop(event)">
       ${lists.map(list => `
-        <div class="list" data-list-id="${list.id}">
-          <div class="list-header">
-            <input value="${list.name}" onblur="renameList('${list.id}',this.value)">
+        <div class="list" data-list-id="${list.id}" draggable="true" ondragstart="dragList(event,'${list.id}')">
+          <div class="list-header" style="cursor:grab">
+            <input value="${list.name}" onblur="renameList('${list.id}',this.value)" ondragstart="event.stopPropagation()" draggable="false">
             <span class="count">${(cardsByList[list.id] || []).length}</span>
-            <button onclick="deleteList('${list.id}','${list.name}')">🗑</button>
+            <button onclick="deleteList('${list.id}','${list.name}')" ondragstart="event.stopPropagation()">🗑</button>
           </div>
           <div class="cards" ondrop="drop(event,'${list.id}')" ondragover="allowDrop(event)">
             ${(cardsByList[list.id] || []).map(card => `
@@ -401,7 +411,7 @@ function renderBoard(user, board, lists, cards, basePath = '') {
               </div>
             `).join('')}
           </div>
-          <div class="add-card" onclick="showCardModal('${list.id}')">+ Add Card</div>
+          <div class="add-card" onclick="showCardModal('${list.id}')" ondragstart="event.stopPropagation()">+ Add Card</div>
         </div>
       `).join('')}
     </div>
@@ -479,6 +489,7 @@ function renderBoard(user, board, lists, cards, basePath = '') {
       const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
       const boardId = '${board.id}';
       let draggedCardId = null;
+      let draggedListId = null;
       let confirmCallback = null;
 
       function showConfirm(message, onConfirm) {
@@ -550,15 +561,20 @@ function renderBoard(user, board, lists, cards, basePath = '') {
         });
       }
 
+      // Card drag and drop
       function drag(e, cardId){
         draggedCardId = cardId;
         e.target.classList.add('dragging');
+        e.stopPropagation();
       }
 
       function allowDrop(e){ e.preventDefault(); }
 
       async function drop(e, newListId){
         e.preventDefault();
+        e.stopPropagation();
+        if (!draggedCardId) return;
+        
         const cardsContainer = e.currentTarget;
         const cards = Array.from(cardsContainer.children);
         const dropY = e.clientY;
@@ -578,6 +594,39 @@ function renderBoard(user, board, lists, cards, basePath = '') {
         fd.append('newListId', newListId);
         fd.append('newPosition', newPosition);
         await fetch(BASE + '/api/card/move',{method:'POST',body:fd});
+        draggedCardId = null;
+        location.reload();
+      }
+
+      // List drag and drop
+      function dragList(e, listId){
+        draggedListId = listId;
+        e.target.classList.add('dragging');
+      }
+
+      async function dropList(e){
+        e.preventDefault();
+        if (!draggedListId) return;
+        
+        const kanban = e.currentTarget;
+        const lists = Array.from(kanban.children);
+        const dropX = e.clientX;
+        let newPosition = 0;
+
+        for(let i = 0; i < lists.length; i++){
+          const rect = lists[i].getBoundingClientRect();
+          if(dropX < rect.left + rect.width / 2){
+            newPosition = i;
+            break;
+          }
+          newPosition = i + 1;
+        }
+
+        const fd = new FormData();
+        fd.append('listId', draggedListId);
+        fd.append('newPosition', newPosition);
+        await fetch(BASE + '/api/list/reorder',{method:'POST',body:fd});
+        draggedListId = null;
         location.reload();
       }
     </script>
