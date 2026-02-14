@@ -6,7 +6,7 @@
         {
             "binding": "AUTH_DB",
             "database_name": "global-auth",
-            "database_id": "REPLACE_WITH_DATABASE_ID_AFTER_CREATION"
+            "database_id": "ba736065-1d46-450b-a083-efc8ba935939"
         },
         {
             "binding": "DB",
