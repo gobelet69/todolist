@@ -4,6 +4,11 @@
     "compatibility_date": "2024-09-23",
     "d1_databases": [
         {
+            "binding": "AUTH_DB",
+            "database_name": "global-auth",
+            "database_id": "REPLACE_WITH_DATABASE_ID_AFTER_CREATION"
+        },
+        {
             "binding": "DB",
             "database_name": "todolist",
             "database_id": "c8e246d5-91c1-4f3b-92d2-a18eef69831f"

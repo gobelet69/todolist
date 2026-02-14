@@ -18,28 +18,28 @@ export default {
     const cookie = req.headers.get('Cookie');
     const sessionId = cookie ? cookie.split(';').find(c => c.trim().startsWith('sess='))?.split('=')[1] : null;
     let user = null;
-    if (sessionId) user = await env.DB.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').bind(sessionId, Date.now()).first();
+    if (sessionId) user = await env.AUTH_DB.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').bind(sessionId, Date.now()).first();
 
     // PUBLIC ROUTES
     if (path === '/login' && method === 'POST') {
       const fd = await req.formData();
-      const dbUser = await env.DB.prepare('SELECT * FROM users WHERE username = ? AND password = ?').bind(fd.get('u'), await hash(fd.get('p'))).first();
+      const dbUser = await env.AUTH_DB.prepare('SELECT * FROM users WHERE username = ? AND password = ?').bind(fd.get('u'), await hash(fd.get('p'))).first();
       if (!dbUser) return new Response('Invalid credentials', { status: 401 });
       const newSess = crypto.randomUUID();
-      await env.DB.prepare('INSERT INTO sessions (id, username, role, expires) VALUES (?, ?, ?, ?)').bind(newSess, dbUser.username, dbUser.role, Date.now() + 86400000).run();
+      await env.AUTH_DB.prepare('INSERT INTO sessions (id, username, role, expires) VALUES (?, ?, ?, ?)').bind(newSess, dbUser.username, dbUser.role, Date.now() + 86400000).run();
       return new Response('OK', { headers: { 'Set-Cookie': `sess=${newSess}; HttpOnly; Secure; SameSite=Strict; Path=/` } });
     }
 
     if (path === '/register' && method === 'POST') {
       const fd = await req.formData();
-      const existing = await env.DB.prepare('SELECT username FROM users WHERE username = ?').bind(fd.get('u')).first();
+      const existing = await env.AUTH_DB.prepare('SELECT username FROM users WHERE username = ?').bind(fd.get('u')).first();
       if (existing) return new Response('Username taken', { status: 400 });
-      await env.DB.prepare('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, ?)').bind(fd.get('u'), await hash(fd.get('p')), 'user', Date.now()).run();
+      await env.AUTH_DB.prepare('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, ?)').bind(fd.get('u'), await hash(fd.get('p')), 'user', Date.now()).run();
       return new Response('OK');
     }
 
     if (path === '/logout') {
-      if (sessionId) await env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run();
+      if (sessionId) await env.AUTH_DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run();
       return new Response('Logged out', { status: 302, headers: { 'Location': '/', 'Set-Cookie': 'sess=; Max-Age=0; Path=/' } });
     }
 
@@ -126,7 +126,7 @@ export default {
 
     if (path === '/api/password' && method === 'POST') {
       const fd = await req.formData();
-      await env.DB.prepare('UPDATE users SET password = ? WHERE username = ?').bind(await hash(fd.get('p')), user.username).run();
+      await env.AUTH_DB.prepare('UPDATE users SET password = ? WHERE username = ?').bind(await hash(fd.get('p')), user.username).run();
       return new Response('OK');
     }
 

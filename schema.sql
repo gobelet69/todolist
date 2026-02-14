@@ -1,22 +1,7 @@
--- Trello Clone Database Schema for Cloudflare D1
--- Run with: npx wrangler d1 execute todolist --file=schema.sql
-
--- Users table for authentication
-CREATE TABLE IF NOT EXISTS users (
-  username TEXT PRIMARY KEY,
-  password TEXT NOT NULL,
-  role TEXT DEFAULT 'user',
-  created_at INTEGER NOT NULL
-);
-
--- Sessions table for login management
-CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT PRIMARY KEY,
-  username TEXT NOT NULL,
-  role TEXT NOT NULL,
-  expires INTEGER NOT NULL,
-  FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
-);
+-- Todo List Data Database Schema for Cloudflare D1
+-- This database contains ONLY todo-specific data
+-- Authentication is handled by the global-auth database
+-- Run with: npx wrangler d1 execute todolist-data --file=schema.sql
 
 -- Boards table (each user can have multiple boards)
 CREATE TABLE IF NOT EXISTS boards (
@@ -56,7 +41,6 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires);
 CREATE INDEX IF NOT EXISTS idx_boards_username ON boards(username);
 CREATE INDEX IF NOT EXISTS idx_lists_board ON lists(board_id);
 CREATE INDEX IF NOT EXISTS idx_cards_list ON cards(list_id);
