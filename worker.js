@@ -287,7 +287,7 @@ function renderDash(user, boards, basePath = '') {
     <div class="board-grid">
       ${boards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#777">No boards yet. Create your first board!</div>' : ''}
       ${boards.map(b => `
-        <div class="board-item" onclick="location.href='/board/${b.id}'">
+        <div class="board-item" onclick="location.href='${basePath}/board/${b.id}'">
           <h3>${b.name}</h3>
           <div class="meta">Created ${new Date(b.created_at).toLocaleDateString()}</div>
           <button onclick="event.stopPropagation();deleteBoard('${b.id}','${b.name}')" style="background:var(--err)">Delete</button>
