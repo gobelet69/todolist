@@ -227,18 +227,18 @@ function renderLogin() {
     <div class="card" style="width:300px;text-align:center">
       <h2>📋 Kanban Board</h2>
       <div id="forms">
-        <form onsubmit="event.preventDefault();doLogin(this)">
-          <input type="text" name="u" placeholder="Username" required style="width:90%"><br>
-          <input type="password" name="p" placeholder="Password" required style="width:90%"><br>
-          <button style="width:100%">LOGIN</button>
+        <form onsubmit="event.preventDefault();doLogin(this)" action="/login" method="post">
+          <input type="text" name="u" placeholder="Username" required style="width:90%" autocomplete="username"><br>
+          <input type="password" name="p" placeholder="Password" required style="width:90%" autocomplete="current-password"><br>
+          <button type="submit" style="width:100%">LOGIN</button>
         </form>
         <p style="font-size:0.8em;color:#aaa;cursor:pointer;margin-top:15px" onclick="toggleReg()">Create account</p>
       </div>
       <div id="reg" style="display:none">
-        <form onsubmit="event.preventDefault();doReg(this)">
-          <input type="text" name="u" placeholder="New Username" required style="width:90%"><br>
-          <input type="password" name="p" placeholder="New Password" required style="width:90%"><br>
-          <button style="width:100%;background:var(--s)">REGISTER</button>
+        <form onsubmit="event.preventDefault();doReg(this)" action="/register" method="post">
+          <input type="text" name="u" placeholder="New Username" required style="width:90%" autocomplete="username"><br>
+          <input type="password" name="p" placeholder="New Password" required style="width:90%" autocomplete="new-password"><br>
+          <button type="submit" style="width:100%;background:var(--s)">REGISTER</button>
         </form>
         <p style="font-size:0.8em;color:#aaa;cursor:pointer;margin-top:15px" onclick="toggleReg()">Back to login</p>
       </div>
