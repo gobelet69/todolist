@@ -152,8 +152,24 @@ button:hover{background:var(--p-hover);transform:translateY(-1px);box-shadow:0 4
 .card{background:var(--card);padding:24px;border-radius:16px;margin-bottom:24px;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,0.2)}
 .row{display:flex;justify-content:space-between;align-items:center}
 a{color:var(--p);text-decoration:none;transition:color 0.2s}
-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--border);margin-bottom:30px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.2);flex-wrap:nowrap;gap:12px}
+header{display:flex;justify-content:space-between;align-items:center;min-height:64px;padding:0 24px;background:var(--card);border-bottom:1px solid var(--border);margin-bottom:30px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.2);flex-wrap:nowrap;gap:12px}
 header strong{font-size:1.1em;letter-spacing:-0.02em}
+.user-wrap{position:relative}
+.user-btn{display:flex;align-items:center;gap:8px;color:var(--txt-main);font-size:0.9em;font-weight:500;padding:9px 14px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid var(--border);cursor:pointer;transition:all 0.2s;white-space:nowrap;font-family:inherit}
+.user-btn:hover{background:rgba(255,255,255,0.1);transform:none;box-shadow:none}
+.user-btn .caret{transition:transform 0.2s;margin-left:2px}
+.user-wrap.open .user-btn .caret{transform:rotate(180deg)}
+.user-dropdown{display:none;position:absolute;right:0;top:calc(100% + 8px);background:#1a2030;border:1px solid var(--border);border-radius:14px;min-width:210px;box-shadow:0 24px 48px rgba(0,0,0,0.5);z-index:999;overflow:hidden}
+.user-wrap.open .user-dropdown{display:block;animation:fadeInDropdown 0.15s ease-out}
+@keyframes fadeInDropdown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.user-dropdown-header{padding:14px 16px 10px;border-bottom:1px solid var(--border)}
+.user-dropdown-header .uname{font-weight:700;color:var(--txt-main);font-size:0.95em}
+.user-dropdown-header .role{color:var(--txt-muted);font-size:0.78em;margin-top:2px}
+.user-dropdown a{display:flex;align-items:center;gap:10px;padding:11px 16px;color:var(--txt-main);text-decoration:none;font-size:0.9em;font-weight:500;transition:background 0.15s}
+.user-dropdown a:hover{background:rgba(255,255,255,0.06)}
+.user-dropdown .sep{height:1px;background:var(--border);margin:4px 0}
+.user-dropdown .signout{color:var(--err)}
+.user-dropdown .signout:hover{background:rgba(244,63,94,0.08)}
 .nav-link{padding:8px 14px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--txt-muted);font-weight:500;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px}
 .nav-link:hover{background:rgba(255,255,255,0.1);color:var(--txt-main)}
 .nav-link.active{background:var(--p);color:#fff;box-shadow:0 4px 12px rgba(99,102,241,0.2)}
@@ -203,22 +219,44 @@ header strong{font-size:1.1em;letter-spacing:-0.02em}
 
 function renderBrand() {
   return `<a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;flex-shrink:0">
-    <span style="width:34px;height:34px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9em;color:#fff;flex-shrink:0;box-shadow:0 0 14px rgba(99,102,241,0.5)">111</span>
-    <span style="font-weight:700;font-size:1.05em;color:#fff;letter-spacing:-0.02em">111<span style="color:#6366f1">iridescence</span></span>
+    <span style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9em;color:#fff;flex-shrink:0;box-shadow:0 0 16px rgba(99,102,241,0.5)">111</span>
+    <span style="font-weight:700;font-size:1.1em;color:#fff;letter-spacing:-0.02em">111<span style="color:#6366f1">iridescence</span></span>
   </a>`;
+}
+
+function renderUserDropdown(username, appName) {
+  const id = 'uw' + Math.random().toString(36).slice(2, 6);
+  return `<div class="user-wrap" id="${id}">
+    <button class="user-btn" onclick="document.getElementById('${id}').classList.toggle('open')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/></svg>
+      ${username}
+      <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="user-dropdown">
+      <div class="user-dropdown-header"><div class="uname">${username}</div><div class="role">${appName}</div></div>
+      <a href="/auth/account">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/></svg>
+        Account Preferences
+      </a>
+      <div class="sep"></div>
+      <a href="/auth/logout" class="signout">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sign Out
+      </a>
+    </div>
+  </div>
+  <script>document.addEventListener('click',e=>{const w=document.getElementById('${id}');if(w&&!w.contains(e.target))w.classList.remove('open')});</script>`;
 }
 
 function renderNav(active, username, basePath = '') {
   return `<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+    <div style="width:1px;height:24px;background:var(--border)"></div>
+    <span style="color:var(--txt-muted);font-size:0.85em;font-weight:600;letter-spacing:0.01em">Todo List</span>
+    <div style="width:1px;height:24px;background:var(--border)"></div>
     <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
       Boards</a>
-    <a href="${basePath}/settings" class="nav-link ${active === 'settings' ? 'active' : ''}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-      Settings</a>
-    <div style="width:1px;height:22px;background:var(--border)"></div>
-    <span style="color:var(--txt-muted);font-size:0.82em;padding:5px 11px;background:rgba(255,255,255,0.04);border-radius:20px;border:1px solid var(--border);white-space:nowrap">${username}</span>
-    <a href="/auth/logout" style="color:var(--err);font-size:0.9em;font-weight:500;padding:8px 12px;border-radius:8px;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.15);transition:background 0.2s;white-space:nowrap;text-decoration:none" onmouseover="this.style.background='rgba(244,63,94,0.15)'" onmouseout="this.style.background='rgba(244,63,94,0.08)'">Sign out</a>
+    ${renderUserDropdown(username, 'Todo List')}
   </div>`;
 }
 
