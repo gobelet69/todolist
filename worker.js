@@ -217,10 +217,13 @@ header strong{font-size:1.1em;letter-spacing:-0.02em}
 .btn-danger:hover{background:rgba(244,63,94,0.1);color:var(--err);border-color:rgba(244,63,94,0.3)}
 `;
 
-function renderBrand() {
-  return `<a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;flex-shrink:0">
-    <span style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9em;color:#fff;flex-shrink:0;box-shadow:0 0 16px rgba(99,102,241,0.5)">111</span>
-    <span style="font-weight:700;font-size:1.1em;color:#fff;letter-spacing:-0.02em">111<span style="color:#6366f1">iridescence</span></span>
+function renderBrand(appName) {
+  return `<a href="/" style="text-decoration:none;display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <span style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9em;color:#fff;flex-shrink:0;box-shadow:0 0 18px rgba(99,102,241,0.55)">111</span>
+    <div style="display:flex;flex-direction:column;line-height:1.25">
+      <span style="font-weight:700;font-size:1.1em;color:#fff;letter-spacing:-0.02em">111<span style="color:#6366f1;text-shadow:0 0 20px rgba(99,102,241,0.6)">iridescence</span></span>
+      <span style="font-size:0.72em;color:#94a3b8;font-weight:500;letter-spacing:0.03em">${appName}</span>
+    </div>
   </a>`;
 }
 
@@ -228,7 +231,6 @@ function renderUserDropdown(username, appName) {
   const id = 'uw' + Math.random().toString(36).slice(2, 6);
   return `<div class="user-wrap" id="${id}">
     <button class="user-btn" onclick="document.getElementById('${id}').classList.toggle('open')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/></svg>
       ${username}
       <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
@@ -250,9 +252,6 @@ function renderUserDropdown(username, appName) {
 
 function renderNav(active, username, basePath = '') {
   return `<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-    <div style="width:1px;height:24px;background:var(--border)"></div>
-    <span style="color:var(--txt-muted);font-size:0.85em;font-weight:600;letter-spacing:0.01em">Todo List</span>
-    <div style="width:1px;height:24px;background:var(--border)"></div>
     <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
       Boards</a>
@@ -264,7 +263,7 @@ function renderNav(active, username, basePath = '') {
 function renderSettings(user, basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>Settings · 111iridescence</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
     <header>
-      ${renderBrand()}
+      ${renderBrand('Todo List')}
       ${renderNav('settings', user.username, basePath)}
     </header>
     <div class="card">
@@ -287,7 +286,7 @@ function renderSettings(user, basePath = '') {
 function renderDash(user, boards, basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>Boards · 111iridescence</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
   <header>
-    ${renderBrand()}
+    ${renderBrand('Todo List')}
     ${renderNav('boards', user.username, basePath)}
   </header>
   <div style="margin-bottom:20px">
