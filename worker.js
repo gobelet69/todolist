@@ -202,25 +202,34 @@ header strong{font-size:1.1em;letter-spacing:-0.02em}
 `;
 
 function renderNav(active, basePath = '') {
-  return `<div style="display:flex;gap:10px">
-    <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">📋 Boards</a>
-    <a href="${basePath}/settings" class="nav-link ${active === 'settings' ? 'active' : ''}">⚙ Settings</a>
-    <a href="/auth/logout" style="color:var(--err);align-self:center;margin-left:auto">Logout</a>
+  return `<div style="display:flex;gap:8px;align-items:center">
+    <a href="/" class="nav-link" style="background:rgba(255,255,255,0.04);border:1px solid var(--border)">🏠 Hub</a>
+    <div style="width:1px;height:24px;background:var(--border);margin:0 4px"></div>
+    <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+      Boards</a>
+    <a href="${basePath}/settings" class="nav-link ${active === 'settings' ? 'active' : ''}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      Settings</a>
+    <a href="/auth/logout" style="color:var(--err);align-self:center;margin-left:8px;font-size:0.9em;font-weight:500;padding:8px 12px;border-radius:8px;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.15);transition:all 0.2s" onmouseover="this.style.background='rgba(244,63,94,0.15)'" onmouseout="this.style.background='rgba(244,63,94,0.08)'">Sign out</a>
   </div>`;
 }
 
 
 function renderSettings(user, basePath = '') {
-  return `<!DOCTYPE html><html lang="en"><head><title>Settings</title><style>${CSS}</style></head><body>
-    <header class="row card" style="padding:15px">
-      <div><strong>Settings</strong> | ${user.username}</div>
+  return `<!DOCTYPE html><html lang="en"><head><title>Settings</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
+    <header>
+      <div style="display:flex;align-items:center;gap:12px">
+        <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;color:var(--txt-main)"><span style="width:30px;height:30px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85em;color:#fff;flex-shrink:0">111</span><strong>Todo List</strong></a>
+        <span style="color:var(--txt-muted);font-size:0.8em;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;border:1px solid var(--border)">${user.username}</span>
+      </div>
       ${renderNav('settings', basePath)}
     </header>
     <div class="card">
       <h3>Change Password</h3>
       <form onsubmit="event.preventDefault();changePw(this)">
         <input type="password" name="p" placeholder="New Password" required><br>
-        <button>Update</button>
+        <button style="margin-top:12px">Update Password</button>
       </form>
     </div>
     <script>
@@ -233,9 +242,12 @@ function renderSettings(user, basePath = '') {
 }
 
 function renderDash(user, boards, basePath = '') {
-  return `<!DOCTYPE html><html lang="en"><head><title>Boards</title><style>${CSS}</style></head><body>
-    <header class="row card" style="padding:15px">
-      <div><strong>📋 My Boards</strong> | ${user.username}</div>
+  return `<!DOCTYPE html><html lang="en"><head><title>Boards</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
+    <header>
+      <div style="display:flex;align-items:center;gap:12px">
+        <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;color:var(--txt-main)"><span style="width:30px;height:30px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85em;color:#fff;flex-shrink:0">111</span><strong>Todo List</strong></a>
+        <span style="color:var(--txt-muted);font-size:0.8em;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;border:1px solid var(--border)">${user.username}</span>
+      </div>
       ${renderNav('boards', basePath)}
     </header>
     <div style="margin-bottom:20px">
@@ -328,9 +340,14 @@ function renderBoard(user, board, lists, cards, basePath = '') {
     cardsByList[c.list_id].push(c);
   });
 
-  return `<!DOCTYPE html><html lang="en"><head><title>${board.name}</title><style>${CSS}</style></head><body>
-    <header class="row card" style="padding:15px">
-      <div><strong>${board.name}</strong> | ${user.username}</div>
+  return `<!DOCTYPE html><html lang="en"><head><title>${board.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
+    <header>
+      <div style="display:flex;align-items:center;gap:12px">
+        <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;color:var(--txt-main)"><span style="width:30px;height:30px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85em;color:#fff;flex-shrink:0">111</span></a>
+        <a href="${basePath}/" style="color:var(--txt-muted);text-decoration:none;transition:color 0.2s" onmouseover="this.style.color='var(--txt-main)'" onmouseout="this.style.color='var(--txt-muted)'">Boards</a>
+        <span style="color:var(--border)">/</span>
+        <strong style="color:var(--txt-main)">${board.name}</strong>
+      </div>
       ${renderNav('', basePath)}
     </header>
 
