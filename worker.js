@@ -152,7 +152,7 @@ button:hover{background:var(--p-hover);transform:translateY(-1px);box-shadow:0 4
 .card{background:var(--card);padding:24px;border-radius:16px;margin-bottom:24px;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,0.2)}
 .row{display:flex;justify-content:space-between;align-items:center}
 a{color:var(--p);text-decoration:none;transition:color 0.2s}
-header.card{display:flex;justify-content:space-between;align-items:center;padding:16px 24px!important;background:var(--card)!important;border-bottom:1px solid var(--border)!important;margin-bottom:30px!important;border-radius:16px!important;box-shadow:0 4px 20px rgba(0,0,0,0.2)!important}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--border);margin-bottom:30px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.2);flex-wrap:nowrap;gap:12px}
 header strong{font-size:1.1em;letter-spacing:-0.02em}
 .nav-link{padding:8px 14px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--txt-muted);font-weight:500;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px}
 .nav-link:hover{background:rgba(255,255,255,0.1);color:var(--txt-main)}
@@ -201,29 +201,33 @@ header strong{font-size:1.1em;letter-spacing:-0.02em}
 .btn-danger:hover{background:rgba(244,63,94,0.1);color:var(--err);border-color:rgba(244,63,94,0.3)}
 `;
 
-function renderNav(active, basePath = '') {
-  return `<div style="display:flex;gap:8px;align-items:center">
-    <a href="/" class="nav-link" style="background:rgba(255,255,255,0.04);border:1px solid var(--border)">🏠 Hub</a>
-    <div style="width:1px;height:24px;background:var(--border);margin:0 4px"></div>
+function renderBrand() {
+  return `<a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;flex-shrink:0">
+    <span style="width:34px;height:34px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9em;color:#fff;flex-shrink:0;box-shadow:0 0 14px rgba(99,102,241,0.5)">111</span>
+    <span style="font-weight:700;font-size:1.05em;color:#fff;letter-spacing:-0.02em">111<span style="color:#6366f1">iridescence</span></span>
+  </a>`;
+}
+
+function renderNav(active, username, basePath = '') {
+  return `<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
     <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
       Boards</a>
     <a href="${basePath}/settings" class="nav-link ${active === 'settings' ? 'active' : ''}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
       Settings</a>
-    <a href="/auth/logout" style="color:var(--err);align-self:center;margin-left:8px;font-size:0.9em;font-weight:500;padding:8px 12px;border-radius:8px;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.15);transition:all 0.2s" onmouseover="this.style.background='rgba(244,63,94,0.15)'" onmouseout="this.style.background='rgba(244,63,94,0.08)'">Sign out</a>
+    <div style="width:1px;height:22px;background:var(--border)"></div>
+    <span style="color:var(--txt-muted);font-size:0.82em;padding:5px 11px;background:rgba(255,255,255,0.04);border-radius:20px;border:1px solid var(--border);white-space:nowrap">${username}</span>
+    <a href="/auth/logout" style="color:var(--err);font-size:0.9em;font-weight:500;padding:8px 12px;border-radius:8px;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.15);transition:background 0.2s;white-space:nowrap;text-decoration:none" onmouseover="this.style.background='rgba(244,63,94,0.15)'" onmouseout="this.style.background='rgba(244,63,94,0.08)'">Sign out</a>
   </div>`;
 }
 
 
 function renderSettings(user, basePath = '') {
-  return `<!DOCTYPE html><html lang="en"><head><title>Settings</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
+  return `<!DOCTYPE html><html lang="en"><head><title>Settings · 111iridescence</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
     <header>
-      <div style="display:flex;align-items:center;gap:12px">
-        <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;color:var(--txt-main)"><span style="width:30px;height:30px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85em;color:#fff;flex-shrink:0">111</span><strong>Todo List</strong></a>
-        <span style="color:var(--txt-muted);font-size:0.8em;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;border:1px solid var(--border)">${user.username}</span>
-      </div>
-      ${renderNav('settings', basePath)}
+      ${renderBrand()}
+      ${renderNav('settings', user.username, basePath)}
     </header>
     <div class="card">
       <h3>Change Password</h3>
@@ -241,96 +245,94 @@ function renderSettings(user, basePath = '') {
   </body></html>`;
 }
 
+
 function renderDash(user, boards, basePath = '') {
-  return `<!DOCTYPE html><html lang="en"><head><title>Boards</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
-    <header>
-      <div style="display:flex;align-items:center;gap:12px">
-        <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;color:var(--txt-main)"><span style="width:30px;height:30px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85em;color:#fff;flex-shrink:0">111</span><strong>Todo List</strong></a>
-        <span style="color:var(--txt-muted);font-size:0.8em;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;border:1px solid var(--border)">${user.username}</span>
-      </div>
-      ${renderNav('boards', basePath)}
-    </header>
-    <div style="margin-bottom:20px">
-      <button onclick="showModal()">+ New Board</button>
-    </div>
-    <div class="board-grid">
-      ${boards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#777">No boards yet. Create your first board!</div>' : ''}
-      ${boards.map(b => `
+  return `<!DOCTYPE html><html lang="en"><head><title>Boards · 111iridescence</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
+  <header>
+    ${renderBrand()}
+    ${renderNav('boards', user.username, basePath)}
+  </header>
+  <div style="margin-bottom:20px">
+    <button onclick="showModal()">+ New Board</button>
+  </div>
+  <div class="board-grid">
+    ${boards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#777">No boards yet. Create your first board!</div>' : ''}
+    ${boards.map(b => `
         <div class="board-item" onclick="location.href='${basePath}/board/${b.id}'">
           <h3>${b.name}</h3>
           <div class="meta">Created ${new Date(b.created_at).toLocaleDateString()}</div>
           <button onclick="event.stopPropagation();deleteBoard('${b.id}','${b.name}')" style="background:var(--err)">Delete</button>
         </div>
       `).join('')}
-    </div>
+  </div>
 
-    <div id="modal" class="modal">
-      <div class="modal-content">
-        <h3>Create Board</h3>
-        <form onsubmit="event.preventDefault();createBoard(this)">
-          <div class="form-group">
-            <label>Board Name</label>
-            <input type="text" name="name" required autofocus>
-          </div>
-          <div class="btn-group">
-            <button>Create</button>
-            <button type="button" class="btn-danger" onclick="hideModal()">Cancel</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Confirmation Modal -->
-    <div id="confirmModal" class="modal">
-      <div class="modal-content" style="max-width:400px">
-        <h3>⚠ Confirm Deletion</h3>
-        <p id="confirmMessage" style="color:#aaa;margin:20px 0"></p>
-        <div class="btn-group">
-          <button id="confirmYes" class="btn-danger">Delete</button>
-          <button id="confirmNo" onclick="hideConfirm()">Cancel</button>
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <h3>Create Board</h3>
+      <form onsubmit="event.preventDefault();createBoard(this)">
+        <div class="form-group">
+          <label>Board Name</label>
+          <input type="text" name="name" required autofocus>
         </div>
+        <div class="btn-group">
+          <button>Create</button>
+          <button type="button" class="btn-danger" onclick="hideModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmModal" class="modal">
+    <div class="modal-content" style="max-width:400px">
+      <h3>⚠ Confirm Deletion</h3>
+      <p id="confirmMessage" style="color:#aaa;margin:20px 0"></p>
+      <div class="btn-group">
+        <button id="confirmYes" class="btn-danger">Delete</button>
+        <button id="confirmNo" onclick="hideConfirm()">Cancel</button>
       </div>
     </div>
+  </div>
 
-    <script>
-      const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
-      let confirmCallback = null;
+  <script>
+    const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
+    let confirmCallback = null;
 
-      function showConfirm(message, onConfirm) {
-        confirmMessage.textContent = message;
-        confirmCallback = onConfirm;
-        confirmModal.classList.add('active');
+    function showConfirm(message, onConfirm) {
+      confirmMessage.textContent = message;
+    confirmCallback = onConfirm;
+    confirmModal.classList.add('active');
       }
 
-      function hideConfirm() {
-        confirmModal.classList.remove('active');
-        confirmCallback = null;
+    function hideConfirm() {
+      confirmModal.classList.remove('active');
+    confirmCallback = null;
       }
 
       confirmYes.onclick = () => {
         if (confirmCallback) confirmCallback();
-        hideConfirm();
+    hideConfirm();
       };
 
-      function showModal(){ modal.classList.add('active'); }
-      function hideModal(){ modal.classList.remove('active'); }
-      async function createBoard(f){
+    function showModal(){modal.classList.add('active'); }
+    function hideModal(){modal.classList.remove('active'); }
+    async function createBoard(f){
         const r = await fetch(BASE + '/api/board/create',{method:'POST',body:new FormData(f)});
-        if(r.ok){
+    if(r.ok){
           const d = await r.json();
-          location.href = BASE + '/board/' + d.id;
+    location.href = BASE + '/board/' + d.id;
         }
       }
-      function deleteBoard(id,name){
-        showConfirm('Delete board "' + name + '"? All lists and cards will be deleted.', async () => {
-          const fd = new FormData();
-          fd.append('id', id);
-          await fetch(BASE + '/api/board/delete',{method:'POST',body:fd});
-          location.reload();
-        });
+    function deleteBoard(id,name){
+      showConfirm('Delete board "' + name + '"? All lists and cards will be deleted.', async () => {
+        const fd = new FormData();
+        fd.append('id', id);
+        await fetch(BASE + '/api/board/delete', { method: 'POST', body: fd });
+        location.reload();
+      });
       }
-    </script>
-  </body></html>`;
+  </script>
+</body></html>`;
 }
 
 function renderBoard(user, board, lists, cards, basePath = '') {
@@ -340,23 +342,24 @@ function renderBoard(user, board, lists, cards, basePath = '') {
     cardsByList[c.list_id].push(c);
   });
 
-  return `<!DOCTYPE html><html lang="en"><head><title>${board.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
+  return `<!DOCTYPE html><html lang="en"><head><title>${board.name} · 111iridescence</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
     <header>
-      <div style="display:flex;align-items:center;gap:12px">
-        <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;color:var(--txt-main)"><span style="width:30px;height:30px;background:linear-gradient(135deg,#6366f1,#f43f5e);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85em;color:#fff;flex-shrink:0">111</span></a>
-        <a href="${basePath}/" style="color:var(--txt-muted);text-decoration:none;transition:color 0.2s" onmouseover="this.style.color='var(--txt-main)'" onmouseout="this.style.color='var(--txt-muted)'">Boards</a>
-        <span style="color:var(--border)">/</span>
-        <strong style="color:var(--txt-main)">${board.name}</strong>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        ${renderBrand()}
+        <span style="color:var(--border);font-size:1.2em">/</span>
+        <a href="${basePath}/" style="color:var(--txt-muted);text-decoration:none;font-size:0.95em;transition:color 0.2s" onmouseover="this.style.color='var(--txt-main)'" onmouseout="this.style.color='var(--txt-muted)'">Boards</a>
+        <span style="color:var(--border);font-size:1.2em">/</span>
+        <strong style="color:var(--txt-main);font-size:0.95em">${board.name}</strong>
       </div>
-      ${renderNav('', basePath)}
+      ${renderNav('', user.username, basePath)}
     </header>
 
-    <div style="margin-bottom:15px">
-      <button onclick="showListModal()">+ Add List</button>
-    </div>
+  <div style="margin-bottom:15px">
+    <button onclick="showListModal()">+ Add List</button>
+  </div>
 
-    <div class="kanban" ondrop="dropList(event)" ondragover="dragOverList(event)">
-      ${lists.map(list => `
+  <div class="kanban" ondrop="dropList(event)" ondragover="dragOverList(event)">
+    ${lists.map(list => `
         <div class="list" data-list-id="${list.id}" draggable="true" ondragstart="dragList(event,'${list.id}')" ondragend="dragEndList(event)">
           <div class="list-header" style="cursor:grab">
             <input value="${list.name}" onblur="renameList('${list.id}',this.value)" ondragstart="event.stopPropagation()" draggable="false">
@@ -378,31 +381,31 @@ function renderBoard(user, board, lists, cards, basePath = '') {
           <div class="add-card" onclick="showCardModal('${list.id}')" ondragstart="event.stopPropagation()">+ Add Card</div>
         </div>
       `).join('')}
-    </div>
+  </div>
 
-    <!-- List Modal -->
-    <div id="listModal" class="modal">
-      <div class="modal-content">
-        <h3>Create List</h3>
-        <form onsubmit="event.preventDefault();createList(this)">
-          <div class="form-group">
-            <label>List Name</label>
-            <input type="text" name="name" required autofocus>
-          </div>
-          <div class="btn-group">
-            <button>Create</button>
-            <button type="button" class="btn-danger" onclick="hideModals()">Cancel</button>
-          </div>
-        </form>
-      </div>
+  <!-- List Modal -->
+  <div id="listModal" class="modal">
+    <div class="modal-content">
+      <h3>Create List</h3>
+      <form onsubmit="event.preventDefault();createList(this)">
+        <div class="form-group">
+          <label>List Name</label>
+          <input type="text" name="name" required autofocus>
+        </div>
+        <div class="btn-group">
+          <button>Create</button>
+          <button type="button" class="btn-danger" onclick="hideModals()">Cancel</button>
+        </div>
+      </form>
     </div>
+  </div>
 
-    <!-- Card Modal -->
-    <div id="cardModal" class="modal">
-      <div class="modal-content">
-        <h3>Create Card</h3>
-        <form onsubmit="event.preventDefault();createCard(this)">
-          <input type="hidden" name="listId" id="cardListId">
+  <!-- Card Modal -->
+  <div id="cardModal" class="modal">
+    <div class="modal-content">
+      <h3>Create Card</h3>
+      <form onsubmit="event.preventDefault();createCard(this)">
+        <input type="hidden" name="listId" id="cardListId">
           <div class="form-group">
             <label>Card Title</label>
             <input type="text" name="title" required>
@@ -411,16 +414,16 @@ function renderBoard(user, board, lists, cards, basePath = '') {
             <button>Create</button>
             <button type="button" class="btn-danger" onclick="hideModals()">Cancel</button>
           </div>
-        </form>
-      </div>
+      </form>
     </div>
+  </div>
 
-    <!-- Edit Card Modal -->
-    <div id="editModal" class="modal">
-      <div class="modal-content">
-        <h3>Edit Card</h3>
-        <form onsubmit="event.preventDefault();updateCard(this)">
-          <input type="hidden" name="id" id="editCardId">
+  <!-- Edit Card Modal -->
+  <div id="editModal" class="modal">
+    <div class="modal-content">
+      <h3>Edit Card</h3>
+      <form onsubmit="event.preventDefault();updateCard(this)">
+        <input type="hidden" name="id" id="editCardId">
           <div class="form-group">
             <label>Title</label>
             <input type="text" name="title" id="editTitle" required>
@@ -433,228 +436,228 @@ function renderBoard(user, board, lists, cards, basePath = '') {
             <button>Save</button>
             <button type="button" class="btn-danger" onclick="hideModals()">Cancel</button>
           </div>
-        </form>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmModal" class="modal">
+    <div class="modal-content" style="max-width:400px">
+      <h3>⚠ Confirm Deletion</h3>
+      <p id="confirmMessage" style="color:#aaa;margin:20px 0"></p>
+      <div class="btn-group">
+        <button id="confirmYes" class="btn-danger">Delete</button>
+        <button id="confirmNo" onclick="hideConfirm()">Cancel</button>
       </div>
     </div>
+  </div>
 
-    <!-- Confirmation Modal -->
-    <div id="confirmModal" class="modal">
-      <div class="modal-content" style="max-width:400px">
-        <h3>⚠ Confirm Deletion</h3>
-        <p id="confirmMessage" style="color:#aaa;margin:20px 0"></p>
-        <div class="btn-group">
-          <button id="confirmYes" class="btn-danger">Delete</button>
-          <button id="confirmNo" onclick="hideConfirm()">Cancel</button>
-        </div>
-      </div>
-    </div>
+  <script>
+    const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
+    const boardId = '${board.id}';
+    let draggedCardId = null;
+    let draggedListId = null;
+    let confirmCallback = null;
 
-    <script>
-      const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
-      const boardId = '${board.id}';
-      let draggedCardId = null;
-      let draggedListId = null;
-      let confirmCallback = null;
-
-      function showConfirm(message, onConfirm) {
-        confirmMessage.textContent = message;
-        confirmCallback = onConfirm;
-        confirmModal.classList.add('active');
+    function showConfirm(message, onConfirm) {
+      confirmMessage.textContent = message;
+    confirmCallback = onConfirm;
+    confirmModal.classList.add('active');
       }
 
-      function hideConfirm() {
-        confirmModal.classList.remove('active');
-        confirmCallback = null;
+    function hideConfirm() {
+      confirmModal.classList.remove('active');
+    confirmCallback = null;
       }
 
       confirmYes.onclick = () => {
         if (confirmCallback) confirmCallback();
-        hideConfirm();
+    hideConfirm();
       };
 
-      function showListModal(){ listModal.classList.add('active'); }
-      function showCardModal(listId){ cardListId.value = listId; cardModal.classList.add('active'); }
-      function hideModals(){ document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')); }
+    function showListModal(){listModal.classList.add('active'); }
+    function showCardModal(listId){cardListId.value = listId; cardModal.classList.add('active'); }
+    function hideModals(){document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')); }
 
-      async function createList(f){
+    async function createList(f){
         const fd = new FormData(f);
-        fd.append('boardId', boardId);
-        await fetch(BASE + '/api/list/create',{method:'POST',body:fd});
-        location.reload();
+    fd.append('boardId', boardId);
+    await fetch(BASE + '/api/list/create',{method:'POST',body:fd});
+    location.reload();
       }
 
-      function deleteList(id, name){
-        showConfirm('Delete list "' + name + '"? All cards will be deleted.', async () => {
-          const fd = new FormData();
-          fd.append('id', id);
-          await fetch(BASE + '/api/list/delete',{method:'POST',body:fd});
-          location.reload();
-        });
-      }
-
-      async function renameList(id, name){
+    function deleteList(id, name){
+      showConfirm('Delete list "' + name + '"? All cards will be deleted.', async () => {
         const fd = new FormData();
         fd.append('id', id);
-        fd.append('name', name);
-        await fetch(BASE + '/api/list/rename',{method:'POST',body:fd});
-      }
-
-      async function createCard(f){
-        await fetch(BASE + '/api/card/create',{method:'POST',body:new FormData(f)});
+        await fetch(BASE + '/api/list/delete', { method: 'POST', body: fd });
         location.reload();
+      });
       }
 
-      function editCard(id, title, desc){
-        editCardId.value = id;
-        editTitle.value = title;
-        editDesc.value = desc;
-        editModal.classList.add('active');
-      }
-
-      async function updateCard(f){
-        await fetch(BASE + '/api/card/update',{method:'POST',body:new FormData(f)});
-        location.reload();
-      }
-
-      function deleteCard(id){
-        showConfirm('Delete this card?', async () => {
-          const fd = new FormData();
-          fd.append('id', id);
-          await fetch(BASE + '/api/card/delete',{method:'POST',body:fd});
-          location.reload();
-        });
-      }
-
-      // Card drag and drop
-      function drag(e, cardId){
-        draggedCardId = cardId;
-        e.target.classList.add('dragging');
-        e.stopPropagation();
-      }
-
-      function allowDrop(e){ e.preventDefault(); }
-
-      async function drop(e, newListId){
-        e.preventDefault();
-        e.stopPropagation();
-        if (!draggedCardId) return;
-        
-        const cardsContainer = e.currentTarget;
-        const cards = Array.from(cardsContainer.children);
-        const dropY = e.clientY;
-        let newPosition = 0;
-
-        for(let i = 0; i < cards.length; i++){
-          const rect = cards[i].getBoundingClientRect();
-          if(dropY < rect.top + rect.height / 2){
-            newPosition = i;
-            break;
-          }
-          newPosition = i + 1;
-        }
-
+    async function renameList(id, name){
         const fd = new FormData();
-        fd.append('cardId', draggedCardId);
-        fd.append('newListId', newListId);
-        fd.append('newPosition', newPosition);
-        await fetch(BASE + '/api/card/move',{method:'POST',body:fd});
-        draggedCardId = null;
+    fd.append('id', id);
+    fd.append('name', name);
+    await fetch(BASE + '/api/list/rename',{method:'POST',body:fd});
+      }
+
+    async function createCard(f){
+      await fetch(BASE + '/api/card/create', { method: 'POST', body: new FormData(f) });
+    location.reload();
+      }
+
+    function editCard(id, title, desc){
+      editCardId.value = id;
+    editTitle.value = title;
+    editDesc.value = desc;
+    editModal.classList.add('active');
+      }
+
+    async function updateCard(f){
+      await fetch(BASE + '/api/card/update', { method: 'POST', body: new FormData(f) });
+    location.reload();
+      }
+
+    function deleteCard(id){
+      showConfirm('Delete this card?', async () => {
+        const fd = new FormData();
+        fd.append('id', id);
+        await fetch(BASE + '/api/card/delete', { method: 'POST', body: fd });
         location.reload();
+      });
       }
 
-      // List drag and drop with live preview
-      let draggedListElement = null;
-      let placeholderElement = null;
-
-      function dragList(e, listId){
-        draggedListId = listId;
-        draggedListElement = e.target;
-        e.target.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        
-        // Create placeholder
-        placeholderElement = document.createElement('div');
-        placeholderElement.className = 'list placeholder';
-        placeholderElement.innerHTML = '<div style="padding:20px;text-align:center;color:var(--p);opacity:0.5">Drop here</div>';
+    // Card drag and drop
+    function drag(e, cardId){
+      draggedCardId = cardId;
+    e.target.classList.add('dragging');
+    e.stopPropagation();
       }
 
-      function dragOverList(e){
-        e.preventDefault();
-        if (!draggedListId || !placeholderElement) return;
-        
-        const kanban = e.currentTarget;
-        const afterElement = getDragAfterElement(kanban, e.clientX);
-        
-        // Insert placeholder at the right position
-        if (afterElement == null) {
-          kanban.appendChild(placeholderElement);
+    function allowDrop(e){e.preventDefault(); }
+
+    async function drop(e, newListId){
+      e.preventDefault();
+    e.stopPropagation();
+    if (!draggedCardId) return;
+
+    const cardsContainer = e.currentTarget;
+    const cards = Array.from(cardsContainer.children);
+    const dropY = e.clientY;
+    let newPosition = 0;
+
+    for(let i = 0; i < cards.length; i++){
+          const rect = cards[i].getBoundingClientRect();
+    if(dropY < rect.top + rect.height / 2){
+      newPosition = i;
+    break;
+          }
+    newPosition = i + 1;
+        }
+
+    const fd = new FormData();
+    fd.append('cardId', draggedCardId);
+    fd.append('newListId', newListId);
+    fd.append('newPosition', newPosition);
+    await fetch(BASE + '/api/card/move',{method:'POST',body:fd});
+    draggedCardId = null;
+    location.reload();
+      }
+
+    // List drag and drop with live preview
+    let draggedListElement = null;
+    let placeholderElement = null;
+
+    function dragList(e, listId){
+      draggedListId = listId;
+    draggedListElement = e.target;
+    e.target.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+
+    // Create placeholder
+    placeholderElement = document.createElement('div');
+    placeholderElement.className = 'list placeholder';
+    placeholderElement.innerHTML = '<div style="padding:20px;text-align:center;color:var(--p);opacity:0.5">Drop here</div>';
+      }
+
+    function dragOverList(e){
+      e.preventDefault();
+    if (!draggedListId || !placeholderElement) return;
+
+    const kanban = e.currentTarget;
+    const afterElement = getDragAfterElement(kanban, e.clientX);
+
+    // Insert placeholder at the right position
+    if (afterElement == null) {
+      kanban.appendChild(placeholderElement);
         } else {
-          kanban.insertBefore(placeholderElement, afterElement);
+      kanban.insertBefore(placeholderElement, afterElement);
         }
       }
 
-      function getDragAfterElement(container, x) {
+    function getDragAfterElement(container, x) {
         const draggableElements = [...container.querySelectorAll('.list:not(.dragging):not(.placeholder)')];
         
         return draggableElements.reduce((closest, child) => {
           const box = child.getBoundingClientRect();
-          const offset = x - box.left - box.width / 2;
-          
-          if (offset < 0 && offset > closest.offset) {
-            return { offset: offset, element: child };
+    const offset = x - box.left - box.width / 2;
+
+    if (offset < 0 && offset > closest.offset) {
+            return {offset: offset, element: child };
           } else {
             return closest;
           }
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }, {offset: Number.NEGATIVE_INFINITY }).element;
       }
 
-      async function dropList(e){
-        e.preventDefault();
-        if (!draggedListId || !placeholderElement) return;
-        
-        const kanban = e.currentTarget;
-        const lists = Array.from(kanban.querySelectorAll('.list:not(.dragging):not(.placeholder)'));
-        
-        // Find position of placeholder
-        let newPosition = 0;
-        const allChildren = Array.from(kanban.children);
-        const placeholderIndex = allChildren.indexOf(placeholderElement);
-        
-        // Count non-dragging, non-placeholder lists before the placeholder
-        for(let i = 0; i < placeholderIndex; i++){
+    async function dropList(e){
+      e.preventDefault();
+    if (!draggedListId || !placeholderElement) return;
+
+    const kanban = e.currentTarget;
+    const lists = Array.from(kanban.querySelectorAll('.list:not(.dragging):not(.placeholder)'));
+
+    // Find position of placeholder
+    let newPosition = 0;
+    const allChildren = Array.from(kanban.children);
+    const placeholderIndex = allChildren.indexOf(placeholderElement);
+
+    // Count non-dragging, non-placeholder lists before the placeholder
+    for(let i = 0; i < placeholderIndex; i++){
           if (!allChildren[i].classList.contains('dragging') && !allChildren[i].classList.contains('placeholder')) {
-            newPosition++;
+      newPosition++;
           }
         }
 
-        // Clean up
-        if (placeholderElement.parentNode) {
-          placeholderElement.parentNode.removeChild(placeholderElement);
+    // Clean up
+    if (placeholderElement.parentNode) {
+      placeholderElement.parentNode.removeChild(placeholderElement);
         }
-        draggedListElement.classList.remove('dragging');
+    draggedListElement.classList.remove('dragging');
 
-        const fd = new FormData();
-        fd.append('listId', draggedListId);
-        fd.append('newPosition', newPosition);
-        await fetch(BASE + '/api/list/reorder',{method:'POST',body:fd});
-        
-        draggedListId = null;
-        draggedListElement = null;
-        placeholderElement = null;
-        location.reload();
+    const fd = new FormData();
+    fd.append('listId', draggedListId);
+    fd.append('newPosition', newPosition);
+    await fetch(BASE + '/api/list/reorder',{method:'POST',body:fd});
+
+    draggedListId = null;
+    draggedListElement = null;
+    placeholderElement = null;
+    location.reload();
       }
 
-      function dragEndList(e){
-        e.target.classList.remove('dragging');
-        if (placeholderElement && placeholderElement.parentNode) {
-          placeholderElement.parentNode.removeChild(placeholderElement);
+    function dragEndList(e){
+      e.target.classList.remove('dragging');
+    if (placeholderElement && placeholderElement.parentNode) {
+      placeholderElement.parentNode.removeChild(placeholderElement);
         }
-        draggedListId = null;
-        draggedListElement = null;
-        placeholderElement = null;
+    draggedListId = null;
+    draggedListElement = null;
+    placeholderElement = null;
       }
-    </script>
-  </body></html>`;
+  </script>
+</body></html>`;
 }
 
 function escapeHtml(text) {
