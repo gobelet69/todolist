@@ -20,31 +20,11 @@ export default {
     let user = null;
     if (sessionId) user = await env.AUTH_DB.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').bind(sessionId, Date.now()).first();
 
-    // PUBLIC ROUTES
-    if (path === '/login' && method === 'POST') {
-      const fd = await req.formData();
-      const dbUser = await env.AUTH_DB.prepare('SELECT * FROM users WHERE username = ? AND password = ?').bind(fd.get('u'), await hash(fd.get('p'))).first();
-      if (!dbUser) return new Response('Invalid credentials', { status: 401 });
-      const newSess = crypto.randomUUID();
-      await env.AUTH_DB.prepare('INSERT INTO sessions (id, username, role, expires) VALUES (?, ?, ?, ?)').bind(newSess, dbUser.username, dbUser.role, Date.now() + 86400000).run();
-      return new Response('OK', { headers: { 'Set-Cookie': `sess=${newSess}; HttpOnly; Secure; SameSite=Strict; Path=/` } });
+    // PROTECTED ROUTES — redirect to central auth if not logged in
+    if (!user) {
+      const redirectUrl = `/auth/login?redirect=${encodeURIComponent(url.pathname)}`;
+      return new Response(null, { status: 302, headers: { 'Location': redirectUrl } });
     }
-
-    if (path === '/register' && method === 'POST') {
-      const fd = await req.formData();
-      const existing = await env.AUTH_DB.prepare('SELECT username FROM users WHERE username = ?').bind(fd.get('u')).first();
-      if (existing) return new Response('Username taken', { status: 400 });
-      await env.AUTH_DB.prepare('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, ?)').bind(fd.get('u'), await hash(fd.get('p')), 'user', Date.now()).run();
-      return new Response('OK');
-    }
-
-    if (path === '/logout') {
-      if (sessionId) await env.AUTH_DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run();
-      return new Response('Logged out', { status: 302, headers: { 'Location': '/', 'Set-Cookie': 'sess=; Max-Age=0; Path=/' } });
-    }
-
-    // PROTECTED ROUTES
-    if (!user) return new Response(renderLogin(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 
     // API: BOARD
     if (path === '/api/board/create' && method === 'POST') {
@@ -217,53 +197,10 @@ function renderNav(active, basePath = '') {
   return `<div style="display:flex;gap:10px">
     <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">📋 Boards</a>
     <a href="${basePath}/settings" class="nav-link ${active === 'settings' ? 'active' : ''}">⚙ Settings</a>
-    <a href="${basePath}/logout" style="color:var(--err);align-self:center;margin-left:auto">Logout</a>
+    <a href="/auth/logout" style="color:var(--err);align-self:center;margin-left:auto">Logout</a>
   </div>`;
 }
 
-function renderLogin() {
-  return `<!DOCTYPE html><html lang="en"><head><title>Login</title><style>${CSS}</style></head>
-  <body style="display:flex;justify-content:center;align-items:center;height:100vh">
-    <div class="card" style="width:300px;text-align:center">
-      <h2>📋 Kanban Board</h2>
-      <div id="forms">
-        <form onsubmit="event.preventDefault();doLogin(this)" action="/login" method="post">
-          <input type="text" name="u" placeholder="Username" required style="width:90%" autocomplete="username"><br>
-          <input type="password" name="p" placeholder="Password" required style="width:90%" autocomplete="current-password"><br>
-          <button type="submit" style="width:100%">LOGIN</button>
-        </form>
-        <p style="font-size:0.8em;color:#aaa;cursor:pointer;margin-top:15px" onclick="toggleReg()">Create account</p>
-      </div>
-      <div id="reg" style="display:none">
-        <form onsubmit="event.preventDefault();doReg(this)" action="/register" method="post">
-          <input type="text" name="u" placeholder="New Username" required style="width:90%" autocomplete="username"><br>
-          <input type="password" name="p" placeholder="New Password" required style="width:90%" autocomplete="new-password"><br>
-          <button type="submit" style="width:100%;background:var(--s)">REGISTER</button>
-        </form>
-        <p style="font-size:0.8em;color:#aaa;cursor:pointer;margin-top:15px" onclick="toggleReg()">Back to login</p>
-      </div>
-      <div id="msg" style="color:var(--err);margin-top:10px"></div>
-    </div>
-    <script>
-      const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
-      function toggleReg(){
-        document.getElementById('forms').style.display = document.getElementById('forms').style.display === 'none' ? 'block' : 'none';
-        document.getElementById('reg').style.display = document.getElementById('reg').style.display === 'none' ? 'block' : 'none';
-        document.getElementById('msg').innerText = '';
-      }
-      async function doLogin(f){
-        const r = await fetch(BASE + '/login',{method:'POST',body:new FormData(f)});
-        if(r.ok) location.reload();
-        else document.getElementById('msg').innerText = 'Access Denied';
-      }
-      async function doReg(f){
-        const r = await fetch(BASE + '/register',{method:'POST',body:new FormData(f)});
-        if(r.ok){ alert('Account created! Please log in.'); toggleReg(); }
-        else document.getElementById('msg').innerText = 'Username taken';
-      }
-    </script>
-  </body></html>`;
-}
 
 function renderSettings(user, basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>Settings</title><style>${CSS}</style></head><body>
