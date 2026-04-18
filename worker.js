@@ -18,7 +18,13 @@ export default {
     const cookie = req.headers.get('Cookie');
     const sessionId = cookie ? cookie.split(';').find(c => c.trim().startsWith('sess='))?.split('=')[1] : null;
     let user = null;
-    if (sessionId) user = await env.AUTH_DB.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').bind(sessionId, Date.now()).first();
+    if (sessionId) {
+      user = await env.AUTH_DB.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').bind(sessionId, Date.now()).first();
+      if (user) {
+        const dbUser = await env.AUTH_DB.prepare('SELECT role FROM users WHERE username = ?').bind(user.username).first();
+        user.role = dbUser?.role || 'viewer';
+      }
+    }
 
     // PROTECTED ROUTES — redirect to central auth if not logged in
     if (!user) {
@@ -107,10 +113,15 @@ export default {
       const examNote = (fd.get('examNote') || '').toString().trim();
       const examStartRaw = (fd.get('examStartTime') || '').toString();
       const examEndRaw = (fd.get('examEndTime') || '').toString();
+      const clientUpdatedAtRaw = (fd.get('clientUpdatedAt') || '').toString();
       let courseId = (fd.get('courseId') || '').toString();
       let sectionId = (fd.get('sectionId') || '').toString();
       const examStartTime = normalizeExamTime(examStartRaw);
       const examEndTime = normalizeExamTime(examEndRaw);
+      const clientUpdatedAt = Number(clientUpdatedAtRaw);
+      const updateTimestamp = Number.isFinite(clientUpdatedAt) && clientUpdatedAt > 0
+        ? Math.floor(clientUpdatedAt)
+        : Date.now();
 
       if (!blocusId || !parseIsoDate(day)) return new Response('Invalid slot date.', { status: 400 });
       if (!['morning', 'afternoon'].includes(period)) return new Response('Invalid slot period.', { status: 400 });
@@ -151,13 +162,14 @@ export default {
         `INSERT INTO blocus_slots (id, blocus_id, username, day, period, course_id, section_id, is_exam, exam_note, exam_start_time, exam_end_time, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(blocus_id, day, period) DO UPDATE SET
-           course_id = excluded.course_id,
-           section_id = excluded.section_id,
-           is_exam = excluded.is_exam,
-            exam_note = excluded.exam_note,
-            exam_start_time = excluded.exam_start_time,
-            exam_end_time = excluded.exam_end_time,
-            updated_at = excluded.updated_at`
+            course_id = excluded.course_id,
+            section_id = excluded.section_id,
+            is_exam = excluded.is_exam,
+             exam_note = excluded.exam_note,
+             exam_start_time = excluded.exam_start_time,
+             exam_end_time = excluded.exam_end_time,
+             updated_at = excluded.updated_at
+         WHERE excluded.updated_at >= blocus_slots.updated_at`
       ).bind(
         crypto.randomUUID(),
         blocusId,
@@ -170,7 +182,7 @@ export default {
         isExam ? examNote : '',
         isExam ? (examStartTime || '') : '',
         isExam ? (examEndTime || '') : '',
-        Date.now()
+        updateTimestamp
       ).run();
 
       return new Response('OK');
@@ -366,6 +378,24 @@ async function hash(str) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buf))).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function normalizeRole(r) {
+  if (r === 'admin') return 'owner';
+  if (r === 'guest+') return 'member';
+  if (r === 'guest') return 'viewer';
+  return r || 'viewer';
+}
+function isOwner(u) { return normalizeRole(u?.role) === 'owner'; }
+const ROLE_META = {
+  owner: { label: 'Owner', color: '#f43f5e', bg: 'rgba(244,63,94,0.15)', border: 'rgba(244,63,94,0.3)', icon: '🔑' },
+  member: { label: 'Member', color: '#A855F7', bg: 'rgba(168,85,247,0.15)', border: 'rgba(168,85,247,0.3)', icon: '📁' },
+  viewer: { label: 'Viewer', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.2)', icon: '👁' }
+};
+const ROLE_PERMS = {
+  owner: ['Upload any file type', 'Delete any file', 'Share files', 'Manage users & roles', 'Access admin panel'],
+  member: ['Upload any file type', 'Delete own files', 'Share files'],
+  viewer: ['Upload PDF files only', 'Delete own files']
+};
+
 // Helper: Get base path prefix
 const BASE_PATH = (path) => path.startsWith('/todo') ? '/todo' : '';
 const BLOCUS_PASTELS = ['#B86BFF', '#D86EFF', '#F86BC7', '#9A7CFF', '#7FA2FF', '#68D2FF', '#6CEFE5', '#C58FFF'];
@@ -394,7 +424,8 @@ const CSS = `
   --p:var(--accent);--err:var(--danger);
 }
 *,*::before,*::after{box-sizing:border-box}
-body{margin:0 auto;font-family:var(--font);background:var(--bg);color:var(--text);max-width:1400px;padding:20px;line-height:1.5;font-size:14px;-webkit-font-smoothing:antialiased}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;font-size:14px;-webkit-font-smoothing:antialiased}
+body > :not(header):not(script):not(.modal){max-width:1400px;margin-left:auto;margin-right:auto;padding-left:20px;padding-right:20px}
 h1,h2,h3,h4{letter-spacing:-0.01em;font-weight:700;margin:0}
 ::selection{background:rgba(168,85,247,0.30)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -416,17 +447,23 @@ header strong{font-size:1.05em;letter-spacing:-0.02em}
 .user-btn:hover{background:var(--surface-hover);transform:none;box-shadow:none}
 .user-btn .caret{transition:transform var(--transition);margin-left:2px;color:var(--text-muted)}
 .user-wrap.open .user-btn .caret{transform:rotate(180deg)}
-.user-dropdown{display:none;position:absolute;right:0;top:calc(100% + 8px);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:220px;box-shadow:var(--shadow-lg);z-index:999;overflow:hidden}
-.user-wrap.open .user-dropdown{display:block;animation:fadeInDropdown 150ms ease-out}
-@keyframes fadeInDropdown{from{opacity:0;transform:translateY(-4px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
-.user-dropdown-header{padding:14px 16px 10px;border-bottom:1px solid var(--border)}
-.user-dropdown-header .uname{font-weight:700;color:var(--text);font-size:0.92rem}
-.user-dropdown-header .role{color:var(--text-muted);font-size:0.76rem;margin-top:2px}
-.user-dropdown a{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--text);text-decoration:none;font-size:0.86rem;font-weight:500;transition:background var(--transition)}
-.user-dropdown a:hover{background:var(--accent-soft)}
-.user-dropdown .sep{height:1px;background:var(--border);margin:4px 0}
-.user-dropdown .signout{color:var(--danger)}
-.user-dropdown .signout:hover{background:var(--danger-soft);color:var(--danger)}
+.dd{display:none;position:absolute;right:0;top:calc(100% + 8px);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:240px;box-shadow:var(--shadow-lg);z-index:999;overflow:hidden}
+.user-wrap.open .dd{display:block;animation:dd 150ms ease-out}
+@keyframes dd{from{opacity:0;transform:translateY(-4px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.dd-hdr{padding:14px 16px 12px;border-bottom:1px solid var(--border)}
+.dd-name{font-weight:700;font-size:0.92rem;margin-bottom:7px}
+.role-badge{display:inline-flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.04em;margin-bottom:9px;text-transform:uppercase}
+.perm-list{list-style:none}
+.perm-list li{font-size:0.76rem;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px}
+.perm-list li.ok{color:var(--text)}
+.pcheck{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;font-weight:700}
+.pcheck.y{background:var(--good-soft);color:var(--good)}
+.pcheck.n{background:var(--surface-soft);color:var(--text-muted)}
+.ddl{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--text);text-decoration:none;font-size:0.86rem;font-weight:500;transition:background var(--transition)}
+.ddl:hover{background:var(--accent-soft);color:var(--text)}
+.dd-sep{height:1px;background:var(--border);margin:4px 0}
+.ddl.out{color:var(--danger)!important}
+.ddl.out:hover{background:var(--danger-soft)!important;color:var(--danger)}
 .nav-link{padding:7px 14px;border-radius:999px;background:var(--surface-soft);border:1px solid var(--border);color:var(--text-secondary);font-weight:600;font-size:0.82rem;transition:all var(--transition);display:inline-flex;align-items:center;gap:6px}
 .nav-link:hover{background:var(--surface-hover);color:var(--text)}
 .nav-link.active{background:var(--gradient);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(168,85,247,0.35)}
@@ -574,25 +611,31 @@ function renderBrand(appName = 'Todo List') {
   </a>`;
 }
 
-function renderUserDropdown(username, appName) {
+function renderUserDropdown(user) {
   const id = 'uw' + Math.random().toString(36).slice(2, 6);
+  const role = normalizeRole(user.role), rm = ROLE_META[role] || ROLE_META.viewer, perms = ROLE_PERMS[role] || [];
+  const all = ['Upload any file type', 'Delete any file', 'Share files', 'Manage users & roles', 'Access admin panel'];
   return `<div class="user-wrap" id="${id}">
     <button class="user-btn" onclick="document.getElementById('${id}').classList.toggle('open')">
-      ${username}
+      ${user.username}
       <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
-    <div class="user-dropdown">
-      <div class="user-dropdown-header"><div class="uname">${username}</div><div class="role">${appName}</div></div>
-      <a href="/auth/account">
+    <div class="dd">
+      <div class="dd-hdr">
+        <div class="dd-name">${user.username}</div>
+        <span class="role-badge" style="background:${rm.bg};color:${rm.color};border:1px solid ${rm.border}">${rm.icon} ${rm.label}</span>
+        <ul class="perm-list">${all.map(p => { const h = perms.includes(p); return `<li class="${h ? 'ok' : ''}"><span class="pcheck ${h ? 'y' : 'n'}">${h ? '✓' : '✕'}</span>${p}</li>`; }).join('')}</ul>
+      </div>
+      <a href="/auth/account" class="ddl">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/></svg>
         Account Preferences
       </a>
-      <a href="/auth/admin">
+      ${isOwner(user) ? `<a href="/auth/admin" class="ddl">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         Admin Panel
-      </a>
-      <div class="sep"></div>
-      <a href="/auth/logout" class="signout">
+      </a>` : ''}
+      <div class="dd-sep"></div>
+      <a href="/auth/logout" class="ddl out">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Sign Out
       </a>
@@ -609,28 +652,27 @@ function renderAppSwitcher(basePath = '') {
       Apps
       <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
-    <div class="user-dropdown">
-      <div class="user-dropdown-header"><div class="uname">Switch app</div><div class="role">111iridescence webapps</div></div>
-      <a href="/">🏠 Hub</a>
-      <a href="/vault">🔒 Vault</a>
-      <a href="/habits">📈 Habits</a>
-      <a href="${todoHref}">✅ Todo</a>
-      <a href="/courses">🎓 Courses</a>
-      <a href="/editor">📝 Editor</a>
-      <a href="/dashboard">📊 Dashboard</a>
-      <a href="/feed">📰 Feed</a>
+    <div class="dd">
+      <a href="/" class="ddl">🏠 Hub</a>
+      <a href="/vault" class="ddl">🔒 Vault</a>
+      <a href="/habits" class="ddl">📈 Habits</a>
+      <a href="${todoHref}" class="ddl">✅ Todo</a>
+      <a href="/courses" class="ddl">🎓 Courses</a>
+      <a href="/editor" class="ddl">📝 Editor</a>
+      <a href="/dashboard" class="ddl">📊 Dashboard</a>
+      <a href="/feed" class="ddl">📰 Feed</a>
     </div>
   </div>
   <script>document.addEventListener('click',e=>{const w=document.getElementById('${id}');if(w&&!w.contains(e.target))w.classList.remove('open')});</script>`;
 }
 
-function renderNav(active, username, basePath = '') {
+function renderNav(active, user, basePath = '') {
   return `<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
     <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
       Boards</a>
     ${renderAppSwitcher(basePath)}
-    ${renderUserDropdown(username, 'Todo List')}
+    ${renderUserDropdown(user)}
   </div>`;
 }
 
@@ -639,7 +681,7 @@ function renderSettings(user, basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>111 Todo List</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/svg+xml" href="${FAVICON}"><style>${CSS}</style></head><body>
     <header>
       ${renderBrand('Todo List')}
-      ${renderNav('settings', user.username, basePath)}
+      ${renderNav('settings', user, basePath)}
     </header>
     <div class="card">
       <h3>Change Password</h3>
@@ -662,7 +704,7 @@ function renderDash(user, boards, blocusBoards = [], basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>111 Todo List</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/svg+xml" href="${FAVICON}"><style>${CSS}</style></head><body>
   <header>
     ${renderBrand('Todo List')}
-    ${renderNav('boards', user.username, basePath)}
+    ${renderNav('boards', user, basePath)}
   </header>
 
   <div style="margin-bottom:20px;display:flex;gap:10px;flex-wrap:wrap">
@@ -1103,7 +1145,7 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         <span style="color:var(--border);font-size:1.2em">/</span>
         <strong style="color:var(--txt-main);font-size:0.95em">${escapeHtml(blocus.name)}</strong>
       </div>
-      ${renderNav('', user.username, basePath)}
+      ${renderNav('', user, basePath)}
     </header>
 
     <div class="calendar-meta">
@@ -1807,7 +1849,7 @@ function renderBoard(user, board, lists, cards, basePath = '') {
         <span style="color:var(--border);font-size:1.2em">/</span>
         <strong style="color:var(--txt-main);font-size:0.95em">${board.name}</strong>
       </div>
-      ${renderNav('', user.username, basePath)}
+      ${renderNav('', user, basePath)}
     </header>
 
   <div style="margin-bottom:15px">
