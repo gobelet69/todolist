@@ -440,7 +440,7 @@ button:active{transform:translateY(0)}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
 a{color:var(--accent);text-decoration:none;transition:color var(--transition)}
 a:hover{color:var(--accent-pink)}
-header{display:flex;justify-content:space-between;align-items:center;height:64px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px}
+header{display:flex;justify-content:space-between;align-items:center;height:64px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px;margin-bottom:20px}
 header strong{font-size:1.05em;letter-spacing:-0.02em}
 .user-wrap{position:relative}
 .user-btn{display:flex;align-items:center;gap:8px;color:var(--text);font-size:0.84rem;font-weight:500;padding:6px 12px 6px 10px;border-radius:var(--radius);background:transparent;border:1px solid var(--border);cursor:pointer;transition:all var(--transition);white-space:nowrap;box-shadow:none}
@@ -1594,6 +1594,8 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         const { isExam, target, note, start, end } = getSlotState(slotEl);
         const safeStart = start === null ? '' : start;
         const safeEnd = end === null ? '' : end;
+        const nextVersion = Math.max((slotEl._saveVersion || 0) + 1, Date.now() * 1000);
+        slotEl._saveVersion = nextVersion;
 
         const parsed = parseEntry(target);
         const fd = new FormData();
@@ -1606,6 +1608,7 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         fd.append('examNote', note);
         fd.append('examStartTime', safeStart);
         fd.append('examEndTime', safeEnd);
+        fd.append('clientUpdatedAt', String(nextVersion));
 
         const response = await fetch(BASE + '/api/blocus/slot/update', { method: 'POST', body: fd, keepalive: true });
         if (!response.ok) {
@@ -1623,41 +1626,20 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         queueSlotSave(slotEl, 0);
       }
 
-      async function flushSlotSave(slotEl) {
-        if (!slotEl) return;
-        if (slotEl._saveInFlight) {
-          slotEl._saveNeedsFlush = true;
-          return;
-        }
-        if (!slotEl._saveRequested) return;
-        slotEl._saveRequested = false;
-        slotEl._saveInFlight = true;
-        try {
-          await saveSlot(slotEl);
-        } finally {
-          slotEl._saveInFlight = false;
-        }
-        if (slotEl._saveRequested || slotEl._saveNeedsFlush) {
-          slotEl._saveNeedsFlush = false;
-          await flushSlotSave(slotEl);
-        }
-      }
-
       function queueSlotSave(slotEl, delay = 0) {
         if (!slotEl) return;
         if (slotEl._saveTimer) {
           clearTimeout(slotEl._saveTimer);
           slotEl._saveTimer = null;
         }
-        slotEl._saveRequested = true;
         if (delay > 0) {
           slotEl._saveTimer = setTimeout(() => {
             slotEl._saveTimer = null;
-            flushSlotSave(slotEl);
+            saveSlot(slotEl);
           }, delay);
           return;
         }
-        flushSlotSave(slotEl);
+        saveSlot(slotEl);
       }
 
       function saveSlotFromInput(input, defer = false) {
@@ -1671,8 +1653,8 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
           if (slotEl._saveTimer) {
             clearTimeout(slotEl._saveTimer);
             slotEl._saveTimer = null;
+            saveSlot(slotEl);
           }
-          if (slotEl._saveRequested) flushSlotSave(slotEl);
         });
       }
 
