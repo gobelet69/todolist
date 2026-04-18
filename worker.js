@@ -40,6 +40,133 @@ export default {
       return new Response('OK');
     }
 
+    // API: BLOCUS CALENDAR
+    if (path === '/api/blocus/create' && method === 'POST') {
+      const fd = await req.formData();
+      const name = (fd.get('name') || '').toString().trim();
+      const startDate = (fd.get('startDate') || '').toString();
+      const endDate = (fd.get('endDate') || '').toString();
+      const parsedStart = parseIsoDate(startDate);
+      const parsedEnd = parseIsoDate(endDate);
+
+      if (!name) return new Response('Calendar name is required.', { status: 400 });
+      if (!parsedStart || !parsedEnd) return new Response('Invalid date range.', { status: 400 });
+      if (!isWithinFourMonths(parsedStart, parsedEnd)) return new Response('Blocus period must be between 1 day and 4 months.', { status: 400 });
+
+      let courses;
+      try {
+        courses = JSON.parse((fd.get('courses') || '[]').toString());
+      } catch {
+        return new Response('Invalid courses payload.', { status: 400 });
+      }
+
+      if (!Array.isArray(courses) || courses.length === 0) {
+        return new Response('Add at least one course.', { status: 400 });
+      }
+
+      const normalizedCourses = normalizeBlocusCourses(courses);
+      if (normalizedCourses.length === 0) {
+        return new Response('Add at least one valid course.', { status: 400 });
+      }
+
+      const createdAt = Date.now();
+      const blocusId = crypto.randomUUID();
+      await env.DB.prepare(
+        'INSERT INTO blocus_boards (id, username, name, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(blocusId, user.username, name, startDate, endDate, createdAt).run();
+
+      for (let i = 0; i < normalizedCourses.length; i++) {
+        const course = normalizedCourses[i];
+        const courseId = crypto.randomUUID();
+        await env.DB.prepare(
+          'INSERT INTO blocus_courses (id, blocus_id, username, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind(courseId, blocusId, user.username, course.name, course.color, i, createdAt).run();
+
+        for (let j = 0; j < course.sections.length; j++) {
+          await env.DB.prepare(
+            'INSERT INTO blocus_course_sections (id, blocus_id, course_id, username, name, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(crypto.randomUUID(), blocusId, courseId, user.username, course.sections[j], j, createdAt).run();
+        }
+      }
+
+      return new Response(JSON.stringify({ id: blocusId }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (path === '/api/blocus/delete' && method === 'POST') {
+      const fd = await req.formData();
+      await env.DB.prepare('DELETE FROM blocus_boards WHERE id = ? AND username = ?').bind(fd.get('id'), user.username).run();
+      return new Response('OK');
+    }
+
+    if (path === '/api/blocus/slot/update' && method === 'POST') {
+      const fd = await req.formData();
+      const blocusId = (fd.get('blocusId') || '').toString();
+      const day = (fd.get('day') || '').toString();
+      const period = (fd.get('period') || '').toString();
+      const isExam = (fd.get('isExam') || '').toString() === '1';
+      const examNote = (fd.get('examNote') || '').toString().trim();
+      let courseId = (fd.get('courseId') || '').toString();
+      let sectionId = (fd.get('sectionId') || '').toString();
+
+      if (!blocusId || !parseIsoDate(day)) return new Response('Invalid slot date.', { status: 400 });
+      if (!['morning', 'afternoon'].includes(period)) return new Response('Invalid slot period.', { status: 400 });
+
+      const blocus = await env.DB.prepare(
+        'SELECT id, start_date, end_date FROM blocus_boards WHERE id = ? AND username = ?'
+      ).bind(blocusId, user.username).first();
+      if (!blocus) return new Response('Calendar not found.', { status: 404 });
+      if (!isDateInRange(day, blocus.start_date, blocus.end_date)) return new Response('Date is out of range for this calendar.', { status: 400 });
+
+      if (sectionId) {
+        const section = await env.DB.prepare(
+          'SELECT s.id, s.course_id FROM blocus_course_sections s INNER JOIN blocus_courses c ON c.id = s.course_id WHERE s.id = ? AND s.blocus_id = ? AND c.username = ?'
+        ).bind(sectionId, blocusId, user.username).first();
+        if (!section) return new Response('Invalid course section.', { status: 400 });
+        courseId = section.course_id;
+      } else if (courseId) {
+        const course = await env.DB.prepare(
+          'SELECT id FROM blocus_courses WHERE id = ? AND blocus_id = ? AND username = ?'
+        ).bind(courseId, blocusId, user.username).first();
+        if (!course) return new Response('Invalid course.', { status: 400 });
+      } else {
+        courseId = null;
+        sectionId = null;
+      }
+
+      if (!isExam) {
+        if (!courseId && !sectionId && !examNote) {
+          await env.DB.prepare(
+            'DELETE FROM blocus_slots WHERE blocus_id = ? AND day = ? AND period = ? AND username = ?'
+          ).bind(blocusId, day, period, user.username).run();
+          return new Response('OK');
+        }
+      }
+
+      await env.DB.prepare(
+        `INSERT INTO blocus_slots (id, blocus_id, username, day, period, course_id, section_id, is_exam, exam_note, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(blocus_id, day, period) DO UPDATE SET
+           course_id = excluded.course_id,
+           section_id = excluded.section_id,
+           is_exam = excluded.is_exam,
+           exam_note = excluded.exam_note,
+           updated_at = excluded.updated_at`
+      ).bind(
+        crypto.randomUUID(),
+        blocusId,
+        user.username,
+        day,
+        period,
+        courseId || null,
+        sectionId || null,
+        isExam ? 1 : 0,
+        isExam ? examNote : '',
+        Date.now()
+      ).run();
+
+      return new Response('OK');
+    }
+
     // API: LIST
     if (path === '/api/list/create' && method === 'POST') {
       const fd = await req.formData();
@@ -123,9 +250,26 @@ export default {
       return new Response(renderBoard(user, board, lists, cards, basePath), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
+    if (path.startsWith('/blocus/')) {
+      const blocusId = path.split('/blocus/')[1];
+      const blocus = await env.DB.prepare('SELECT * FROM blocus_boards WHERE id = ? AND username = ?').bind(blocusId, user.username).first();
+      if (!blocus) return new Response('404', { status: 404 });
+      const { results: courses } = await env.DB.prepare(
+        'SELECT * FROM blocus_courses WHERE blocus_id = ? ORDER BY position ASC'
+      ).bind(blocusId).all();
+      const { results: sections } = await env.DB.prepare(
+        'SELECT * FROM blocus_course_sections WHERE blocus_id = ? ORDER BY position ASC'
+      ).bind(blocusId).all();
+      const { results: slots } = await env.DB.prepare(
+        'SELECT * FROM blocus_slots WHERE blocus_id = ? ORDER BY day ASC'
+      ).bind(blocusId).all();
+      return new Response(renderBlocus(user, blocus, courses, sections, slots, basePath), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+
     if (path === '/' || url.pathname === '') {
       const { results: boards } = await env.DB.prepare('SELECT * FROM boards WHERE username = ? ORDER BY created_at DESC').bind(user.username).all();
-      return new Response(renderDash(user, boards, basePath), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      const { results: blocusBoards } = await env.DB.prepare('SELECT * FROM blocus_boards WHERE username = ? ORDER BY created_at DESC').bind(user.username).all();
+      return new Response(renderDash(user, boards, blocusBoards, basePath), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
     return new Response('404', { status: 404 });
@@ -139,6 +283,7 @@ async function hash(str) {
 
 // Helper: Get base path prefix
 const BASE_PATH = (path) => path.startsWith('/todo') ? '/todo' : '';
+const BLOCUS_PASTELS = ['#FFD6E0', '#D9F7BE', '#CDE7FF', '#FFE7BA', '#EAD7FF', '#B8F2E6', '#FDE2C4', '#CFFAFE', '#FBCFE8', '#E2E8F0'];
 
 // CSS - Simple Dark Theme (like Habit Tracker)
 const CSS = `
@@ -249,11 +394,38 @@ header strong{font-size:1.05em;letter-spacing:-0.02em}
 .btn-group button{flex:1}
 .btn-danger{background:transparent;border:1px solid var(--border);color:var(--text);box-shadow:none}
 .btn-danger:hover{background:var(--danger-soft);color:var(--danger);border-color:rgba(244,63,94,0.35);transform:none;box-shadow:none}
+.section-title{font-size:1rem;font-weight:700;margin:18px 0 8px}
+.input-row{display:flex;gap:8px;align-items:flex-end}
+.input-row>*{flex:1}
+.small-btn{padding:8px 12px;white-space:nowrap}
+.course-builder-list{display:flex;flex-direction:column;gap:8px;max-height:180px;overflow:auto;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-soft)}
+.course-builder-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface)}
+.course-color-dot{width:12px;height:12px;border-radius:999px;display:inline-block;flex-shrink:0}
+.chip-list{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:0.74rem;border:1px solid var(--border);background:var(--surface-soft);color:var(--text-secondary)}
+.calendar-meta{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;color:var(--text-secondary);font-size:0.82rem}
+.calendar-legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.calendar-legend-item{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface-soft)}
+.calendar-legend-item .name{font-size:0.8rem;font-weight:600}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:12px}
+.calendar-empty{border:1px dashed transparent;min-height:210px}
+.calendar-day{min-height:210px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden}
+.calendar-day-head{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--surface-soft);font-size:0.76rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.03em}
+.calendar-day-head .day-num{font-size:1rem;font-weight:700;color:var(--text)}
+.calendar-slot{flex:1;display:flex;flex-direction:column;gap:6px;padding:8px;border-top:1px solid var(--border);background:var(--surface-soft);transition:background var(--transition),border-color var(--transition)}
+.calendar-slot:first-of-type{border-top:none}
+.calendar-slot-label{font-size:0.68rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
+.calendar-slot select,.calendar-slot input{margin:0;padding:6px 8px;font-size:0.76rem}
+.calendar-slot input{min-width:0}
+.exam-extra.hidden{display:none}
+@media (max-width:1200px){.calendar-grid{grid-template-columns:repeat(4,minmax(150px,1fr))}}
+@media (max-width:900px){.calendar-grid{grid-template-columns:repeat(2,minmax(140px,1fr))}.input-row{flex-direction:column;align-items:stretch}}
+@media (max-width:560px){.calendar-grid{grid-template-columns:1fr}}
 `;
 
 const FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23A855F7'/%3E%3Cstop offset='1' stop-color='%23EC4899'/%3E%3C/LinearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ctext x='16' y='21' font-family='Arial,sans-serif' font-weight='900' font-size='12' fill='white' text-anchor='middle'%3E111%3C/text%3E%3C/svg%3E`;
 
-function renderBrand(appName) {
+function renderBrand(appName = 'Todo List') {
   return `<a href="/" style="text-decoration:none;display:flex;align-items:center;gap:10px;flex-shrink:0">
     <span style="width:36px;height:36px;background:linear-gradient(135deg,#A855F7,#EC4899);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.05em;color:#fff;text-shadow:0 0 12px rgba(255,255,255,0.7),0 0 4px rgba(255,255,255,0.95);flex-shrink:0;box-shadow:0 2px 8px rgba(168,85,247,0.35),0 0 20px rgba(168,85,247,0.45)">111</span>
     <div style="display:flex;flex-direction:column;line-height:1.25">
@@ -323,26 +495,43 @@ function renderSettings(user, basePath = '') {
 }
 
 
-function renderDash(user, boards, basePath = '') {
+function renderDash(user, boards, blocusBoards = [], basePath = '') {
   return `<!DOCTYPE html><html lang="en"><head><title>111 Todo List</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/svg+xml" href="${FAVICON}"><style>${CSS}</style></head><body>
   <header>
     ${renderBrand('Todo List')}
     ${renderNav('boards', user.username, basePath)}
   </header>
-  <div style="margin-bottom:20px">
+
+  <div style="margin-bottom:20px;display:flex;gap:10px;flex-wrap:wrap">
     <button onclick="showModal()">+ New Board</button>
+    <button onclick="showBlocusModal()">+ New Blocus Calendar</button>
   </div>
+
+  <h2 class="section-title">Kanban Boards</h2>
   <div class="board-grid">
     ${boards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#777">No boards yet. Create your first board!</div>' : ''}
     ${boards.map(b => `
         <div class="board-item" onclick="location.href='${basePath}/board/${b.id}'">
-          <h3>${b.name}</h3>
+          <h3>${escapeHtml(b.name)}</h3>
           <div class="meta">Created ${new Date(b.created_at).toLocaleDateString()}</div>
-          <button onclick="event.stopPropagation();deleteBoard('${b.id}','${b.name}')" style="background:var(--err)">Delete</button>
+          <button onclick="event.stopPropagation();deleteBoard('${b.id}')" style="background:var(--err)">Delete</button>
         </div>
       `).join('')}
   </div>
 
+  <h2 class="section-title" style="margin-top:28px">Blocus Calendars</h2>
+  <div class="board-grid">
+    ${blocusBoards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#777">No blocus calendar yet. Create one to plan your revision period.</div>' : ''}
+    ${blocusBoards.map(b => `
+        <div class="board-item" onclick="location.href='${basePath}/blocus/${b.id}'">
+          <h3>${escapeHtml(b.name)}</h3>
+          <div class="meta">${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</div>
+          <button onclick="event.stopPropagation();deleteBlocus('${b.id}')" style="background:var(--err)">Delete</button>
+        </div>
+      `).join('')}
+  </div>
+
+  <!-- Board modal -->
   <div id="modal" class="modal">
     <div class="modal-content">
       <h3>Create Board</h3>
@@ -354,6 +543,42 @@ function renderDash(user, boards, basePath = '') {
         <div class="btn-group">
           <button>Create</button>
           <button type="button" class="btn-danger" onclick="hideModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Blocus modal -->
+  <div id="blocusModal" class="modal">
+    <div class="modal-content" style="max-width:760px">
+      <h3>Create Blocus Calendar</h3>
+      <form onsubmit="event.preventDefault();createBlocus(this)">
+        <div class="form-group">
+          <label>Calendar Name</label>
+          <input type="text" name="name" required>
+        </div>
+        <div class="input-row">
+          <div class="form-group">
+            <label>Start date</label>
+            <input type="date" name="startDate" required>
+          </div>
+          <div class="form-group">
+            <label>End date</label>
+            <input type="date" name="endDate" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Add your courses and optional exam subsections (comma separated)</label>
+          <div class="input-row">
+            <input id="courseNameInput" type="text" placeholder="Course name">
+            <input id="courseSectionsInput" type="text" placeholder="Exam subsections (e.g. Midterm, Oral, Final)">
+            <button type="button" class="small-btn" onclick="addCourse()">Add course</button>
+          </div>
+        </div>
+        <div id="courseBuilderList" class="course-builder-list"></div>
+        <div class="btn-group">
+          <button>Create calendar</button>
+          <button type="button" class="btn-danger" onclick="hideBlocusModal()">Cancel</button>
         </div>
       </form>
     </div>
@@ -373,43 +598,361 @@ function renderDash(user, boards, basePath = '') {
 
   <script>
     const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
+    const PASTEL_COLORS = ${JSON.stringify(BLOCUS_PASTELS)};
     let confirmCallback = null;
+    let blocusCourses = [];
 
     function showConfirm(message, onConfirm) {
       confirmMessage.textContent = message;
-    confirmCallback = onConfirm;
-    confirmModal.classList.add('active');
-      }
+      confirmCallback = onConfirm;
+      confirmModal.classList.add('active');
+    }
 
     function hideConfirm() {
       confirmModal.classList.remove('active');
-    confirmCallback = null;
+      confirmCallback = null;
+    }
+
+    confirmYes.onclick = () => {
+      if (confirmCallback) confirmCallback();
+      hideConfirm();
+    };
+
+    function showModal(){ modal.classList.add('active'); }
+    function hideModal(){ modal.classList.remove('active'); }
+    function showBlocusModal(){ blocusModal.classList.add('active'); renderCourseBuilder(); }
+    function hideBlocusModal(){ blocusModal.classList.remove('active'); }
+
+    function escapeText(str){
+      return (str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]));
+    }
+
+    function normalizeSectionNames(raw){
+      return (raw || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .filter((v, i, arr) => arr.indexOf(v) === i)
+        .slice(0, 12);
+    }
+
+    function addCourse(){
+      const name = (courseNameInput.value || '').trim();
+      if (!name) {
+        courseNameInput.focus();
+        return;
+      }
+      const sections = normalizeSectionNames(courseSectionsInput.value);
+      const color = PASTEL_COLORS[blocusCourses.length % PASTEL_COLORS.length];
+      blocusCourses.push({ name, sections, color });
+      courseNameInput.value = '';
+      courseSectionsInput.value = '';
+      renderCourseBuilder();
+      courseNameInput.focus();
+    }
+
+    function removeCourse(index){
+      blocusCourses.splice(index, 1);
+      renderCourseBuilder();
+    }
+
+    function renderCourseBuilder(){
+      if (blocusCourses.length === 0) {
+        courseBuilderList.innerHTML = '<span style="color:var(--text-muted);font-size:0.82rem">No courses added yet.</span>';
+        return;
       }
 
-      confirmYes.onclick = () => {
-        if (confirmCallback) confirmCallback();
-    hideConfirm();
-      };
+      courseBuilderList.innerHTML = blocusCourses.map((course, index) => {
+        const sections = course.sections.length
+          ? '<div class="chip-list">' + course.sections.map(s => '<span class="chip">' + escapeText(s) + '</span>').join('') + '</div>'
+          : '<span style="font-size:0.75rem;color:var(--text-muted)">No subsections</span>';
+        return \`<div class="course-builder-item">
+            <div style="display:flex;align-items:flex-start;gap:8px;flex-direction:column">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="course-color-dot" style="background:\${course.color}"></span>
+                <strong style="font-size:0.86rem">\${escapeText(course.name)}</strong>
+              </div>
+              \${sections}
+            </div>
+            <button type="button" class="btn-danger small-btn" onclick="removeCourse(\${index})">Remove</button>
+          </div>\`;
+      }).join('');
+    }
 
-    function showModal(){modal.classList.add('active'); }
-    function hideModal(){modal.classList.remove('active'); }
+    function isValidPeriod(startDate, endDate){
+      if (!startDate || !endDate) return false;
+      const start = new Date(startDate + 'T00:00:00Z');
+      const end = new Date(endDate + 'T00:00:00Z');
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+      if (end < start) return false;
+      const maxEnd = new Date(start.getTime());
+      maxEnd.setUTCMonth(maxEnd.getUTCMonth() + 4);
+      maxEnd.setUTCDate(maxEnd.getUTCDate() - 1);
+      return end <= maxEnd;
+    }
+
     async function createBoard(f){
-        const r = await fetch(BASE + '/api/board/create',{method:'POST',body:new FormData(f)});
-    if(r.ok){
-          const d = await r.json();
-    location.href = BASE + '/board/' + d.id;
-        }
+      const r = await fetch(BASE + '/api/board/create', { method:'POST', body:new FormData(f) });
+      if (r.ok) {
+        const d = await r.json();
+        location.href = BASE + '/board/' + d.id;
       }
-    function deleteBoard(id,name){
-      showConfirm('Delete board "' + name + '"? All lists and cards will be deleted.', async () => {
+    }
+
+    async function createBlocus(f){
+      if (blocusCourses.length === 0) {
+        alert('Add at least one course.');
+        return;
+      }
+
+      const fd = new FormData(f);
+      const startDate = (fd.get('startDate') || '').toString();
+      const endDate = (fd.get('endDate') || '').toString();
+      if (!isValidPeriod(startDate, endDate)) {
+        alert('Pick a valid period between 1 day and 4 months.');
+        return;
+      }
+
+      fd.set('courses', JSON.stringify(blocusCourses));
+      const r = await fetch(BASE + '/api/blocus/create', { method:'POST', body:fd });
+      if (!r.ok) {
+        alert(await r.text() || 'Could not create calendar.');
+        return;
+      }
+      const d = await r.json();
+      location.href = BASE + '/blocus/' + d.id;
+    }
+
+    function deleteBoard(id){
+      showConfirm('Delete this board? All lists and cards will be deleted.', async () => {
         const fd = new FormData();
         fd.append('id', id);
         await fetch(BASE + '/api/board/delete', { method: 'POST', body: fd });
         location.reload();
       });
-      }
+    }
+
+    function deleteBlocus(id){
+      showConfirm('Delete this blocus calendar? All courses and slots will be deleted.', async () => {
+        const fd = new FormData();
+        fd.append('id', id);
+        await fetch(BASE + '/api/blocus/delete', { method: 'POST', body: fd });
+        location.reload();
+      });
+    }
   </script>
 </body></html>`;
+}
+
+function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
+  const coursesById = {};
+  const sectionsByCourse = {};
+  const sectionToCourse = {};
+  const entryColors = {};
+
+  courses.forEach(course => {
+    coursesById[course.id] = course;
+    sectionsByCourse[course.id] = [];
+    entryColors[`course:${course.id}`] = course.color;
+  });
+
+  sections.forEach(section => {
+    if (!sectionsByCourse[section.course_id]) sectionsByCourse[section.course_id] = [];
+    sectionsByCourse[section.course_id].push(section);
+    sectionToCourse[section.id] = section.course_id;
+    const parentColor = coursesById[section.course_id]?.color || '#B8B5FF';
+    entryColors[`section:${section.id}`] = parentColor;
+  });
+
+  const slotByKey = {};
+  slots.forEach(slot => {
+    slotByKey[`${slot.day}|${slot.period}`] = slot;
+  });
+
+  const days = buildDateRange(blocus.start_date, blocus.end_date);
+  const firstDay = parseIsoDate(blocus.start_date);
+  const firstWeekdayOffset = firstDay ? (firstDay.getUTCDay() + 6) % 7 : 0;
+
+  const renderSelectOptions = (selectedValue, includeExamOption, placeholder) => {
+    let html = '';
+    if (includeExamOption) {
+      html += `<option value="__exam__"${selectedValue === '__exam__' ? ' selected' : ''}>🏁 Exam day</option>`;
+    }
+    html += `<option value=""${!selectedValue ? ' selected' : ''}>${placeholder}</option>`;
+
+    courses.forEach(course => {
+      const courseValue = `course:${course.id}`;
+      html += `<optgroup label="${escapeHtml(course.name)}">`;
+      html += `<option value="${courseValue}"${selectedValue === courseValue ? ' selected' : ''}>${escapeHtml(course.name)} (general)</option>`;
+      const subSections = sectionsByCourse[course.id] || [];
+      subSections.forEach(section => {
+        const sectionValue = `section:${section.id}`;
+        html += `<option value="${sectionValue}"${selectedValue === sectionValue ? ' selected' : ''}>↳ ${escapeHtml(section.name)}</option>`;
+      });
+      html += `</optgroup>`;
+    });
+    return html;
+  };
+
+  const renderSlot = (dayIso, period, label) => {
+    const slot = slotByKey[`${dayIso}|${period}`];
+    const isExam = slot ? Number(slot.is_exam) === 1 : false;
+    const targetValue = slot ? (slot.section_id ? `section:${slot.section_id}` : slot.course_id ? `course:${slot.course_id}` : '') : '';
+    const mainValue = isExam ? '__exam__' : targetValue;
+    const examForValue = isExam ? targetValue : '';
+    const examNote = isExam ? (slot.exam_note || '') : '';
+    const style = getSlotStyle(entryColors[targetValue], isExam);
+
+    return `<div class="calendar-slot" data-day="${dayIso}" data-period="${period}" style="${style}">
+      <div class="calendar-slot-label">${label}</div>
+      <select class="slot-main" onchange="handleSlotChange(this)">
+        ${renderSelectOptions(mainValue, true, '— Select course —')}
+      </select>
+      <div class="exam-extra ${isExam ? '' : 'hidden'}">
+        <select class="slot-exam-for" onchange="saveSlotFromInput(this)">
+          ${renderSelectOptions(examForValue, false, '— Exam for (course/subsection) —')}
+        </select>
+        <input type="text" class="slot-exam-note" value="${escapeHtml(examNote)}" placeholder="Exam details" onblur="saveSlotFromInput(this)">
+      </div>
+    </div>`;
+  };
+
+  return `<!DOCTYPE html><html lang="en"><head><title>${escapeHtml(blocus.name)} · Blocus</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/svg+xml" href="${FAVICON}"><style>${CSS}</style></head><body>
+    <header>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        ${renderBrand('Todo List')}
+        <span style="color:var(--border);font-size:1.2em">/</span>
+        <a href="${basePath}/" style="color:var(--txt-muted);text-decoration:none;font-size:0.95em;transition:color 0.2s" onmouseover="this.style.color='var(--txt-main)'" onmouseout="this.style.color='var(--txt-muted)'">Boards</a>
+        <span style="color:var(--border);font-size:1.2em">/</span>
+        <strong style="color:var(--txt-main);font-size:0.95em">${escapeHtml(blocus.name)}</strong>
+      </div>
+      ${renderNav('', user.username, basePath)}
+    </header>
+
+    <div class="calendar-meta">
+      <div><strong>Period:</strong> ${escapeHtml(blocus.start_date)} → ${escapeHtml(blocus.end_date)}</div>
+      <div><strong>Slots per day:</strong> Morning + Afternoon</div>
+      <div><strong>Rule:</strong> choose a course/subsection, or set <em>Exam day</em> with details</div>
+    </div>
+
+    <div class="calendar-legend">
+      ${courses.map(course => `
+        <div class="calendar-legend-item">
+          <span class="course-color-dot" style="background:${escapeHtml(course.color)}"></span>
+          <span class="name">${escapeHtml(course.name)}</span>
+          ${(sectionsByCourse[course.id] || []).map(section => `<span class="chip">${escapeHtml(section.name)}</span>`).join('')}
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="calendar-grid">
+      ${Array.from({ length: firstWeekdayOffset }).map(() => '<div class="calendar-empty"></div>').join('')}
+      ${days.map(day => `
+        <div class="calendar-day">
+          <div class="calendar-day-head">
+            <span>${escapeHtml(day.weekday)}</span>
+            <span class="day-num">${day.day}</span>
+          </div>
+          ${renderSlot(day.iso, 'morning', 'Morning')}
+          ${renderSlot(day.iso, 'afternoon', 'Afternoon')}
+        </div>
+      `).join('')}
+    </div>
+
+    <script>
+      const BASE = location.pathname.startsWith('/todo') ? '/todo' : '';
+      const blocusId = '${blocus.id}';
+      const ENTRY_COLORS = ${JSON.stringify(entryColors)};
+      const SECTION_TO_COURSE = ${JSON.stringify(sectionToCourse)};
+
+      function hexToRgb(hex) {
+        const clean = (hex || '').replace('#', '');
+        if (clean.length !== 6) return null;
+        const value = parseInt(clean, 16);
+        if (Number.isNaN(value)) return null;
+        return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+      }
+
+      function rgba(hex, alpha) {
+        const rgb = hexToRgb(hex);
+        if (!rgb) return '';
+        return 'rgba(' + rgb.r + ', ' + rgb.g + ', ' + rgb.b + ', ' + alpha + ')';
+      }
+
+      function darken(hex, amount) {
+        const rgb = hexToRgb(hex);
+        if (!rgb) return '';
+        const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+        const r = clamp(rgb.r * (1 - amount));
+        const g = clamp(rgb.g * (1 - amount));
+        const b = clamp(rgb.b * (1 - amount));
+        return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+      }
+
+      function parseEntry(value) {
+        if (!value) return { courseId: '', sectionId: '' };
+        const [kind, id] = value.split(':');
+        if (kind === 'course') return { courseId: id, sectionId: '' };
+        if (kind === 'section') return { courseId: SECTION_TO_COURSE[id] || '', sectionId: id };
+        return { courseId: '', sectionId: '' };
+      }
+
+      function getSlotState(slotEl) {
+        const main = slotEl.querySelector('.slot-main').value;
+        const isExam = main === '__exam__';
+        const target = isExam ? slotEl.querySelector('.slot-exam-for').value : main;
+        const note = isExam ? slotEl.querySelector('.slot-exam-note').value.trim() : '';
+        return { isExam, target, note };
+      }
+
+      function applySlotColor(slotEl) {
+        const { isExam, target } = getSlotState(slotEl);
+        const color = ENTRY_COLORS[target];
+        if (!color) {
+          slotEl.style.background = 'var(--surface-soft)';
+          slotEl.style.borderColor = 'var(--border)';
+          return;
+        }
+        const tone = isExam ? darken(color, 0.25) : color;
+        slotEl.style.background = rgba(tone, isExam ? 0.45 : 0.28);
+        slotEl.style.borderColor = rgba(darken(color, isExam ? 0.4 : 0.18), 0.82);
+      }
+
+      async function saveSlot(slotEl) {
+        const { isExam, target, note } = getSlotState(slotEl);
+        const parsed = parseEntry(target);
+        const fd = new FormData();
+        fd.append('blocusId', blocusId);
+        fd.append('day', slotEl.dataset.day);
+        fd.append('period', slotEl.dataset.period);
+        fd.append('courseId', parsed.courseId || '');
+        fd.append('sectionId', parsed.sectionId || '');
+        fd.append('isExam', isExam ? '1' : '0');
+        fd.append('examNote', note);
+
+        const response = await fetch(BASE + '/api/blocus/slot/update', { method: 'POST', body: fd });
+        if (!response.ok) {
+          alert(await response.text() || 'Could not save slot.');
+        }
+      }
+
+      function handleSlotChange(input) {
+        const slotEl = input.closest('.calendar-slot');
+        const isExam = input.value === '__exam__';
+        slotEl.querySelector('.exam-extra').classList.toggle('hidden', !isExam);
+        applySlotColor(slotEl);
+        saveSlot(slotEl);
+      }
+
+      function saveSlotFromInput(input) {
+        const slotEl = input.closest('.calendar-slot');
+        applySlotColor(slotEl);
+        saveSlot(slotEl);
+      }
+
+      document.querySelectorAll('.calendar-slot').forEach(applySlotColor);
+    </script>
+  </body></html>`;
 }
 
 function renderBoard(user, board, lists, cards, basePath = '') {
@@ -737,6 +1280,126 @@ function renderBoard(user, board, lists, cards, basePath = '') {
 </body></html>`;
 }
 
-function escapeHtml(text) {
-  return text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+function escapeHtml(text = '') {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function normalizeHexColor(color, fallback = '#B8B5FF') {
+  const value = typeof color === 'string' ? color.trim() : '';
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+}
+
+function normalizeBlocusCourses(courses) {
+  if (!Array.isArray(courses)) return [];
+  const normalized = [];
+  for (let i = 0; i < courses.length; i++) {
+    const course = courses[i] || {};
+    const name = (course.name || '').toString().trim();
+    if (!name) continue;
+
+    const fallbackColor = BLOCUS_PASTELS[normalized.length % BLOCUS_PASTELS.length];
+    const color = normalizeHexColor(course.color, fallbackColor);
+    const seen = new Set();
+    const sections = Array.isArray(course.sections)
+      ? course.sections
+          .map(s => (s || '').toString().trim())
+          .filter(Boolean)
+          .filter(s => {
+            const key = s.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .slice(0, 12)
+      : [];
+
+    normalized.push({ name, color, sections });
+  }
+  return normalized.slice(0, 24);
+}
+
+function parseIsoDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return date;
+}
+
+function toIsoDate(date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function isWithinFourMonths(start, end) {
+  if (!start || !end) return false;
+  if (end < start) return false;
+  const maxEnd = new Date(start.getTime());
+  maxEnd.setUTCMonth(maxEnd.getUTCMonth() + 4);
+  maxEnd.setUTCDate(maxEnd.getUTCDate() - 1);
+  return end <= maxEnd;
+}
+
+function isDateInRange(targetIso, startIso, endIso) {
+  const target = parseIsoDate(targetIso);
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  if (!target || !start || !end) return false;
+  return target >= start && target <= end;
+}
+
+function buildDateRange(startIso, endIso) {
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  if (!start || !end || end < start) return [];
+
+  const weekdayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' });
+  const days = [];
+  const cursor = new Date(start.getTime());
+  while (cursor <= end) {
+    days.push({
+      iso: toIsoDate(cursor),
+      weekday: weekdayFmt.format(cursor),
+      day: String(cursor.getUTCDate()).padStart(2, '0')
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return days;
+}
+
+function hexToRgb(hex) {
+  const clean = (hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
+  const value = parseInt(clean, 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+function rgbaFromHex(hex, alpha) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return '';
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function darkenHex(hex, amount = 0.2) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return '';
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  const r = clamp(rgb.r * (1 - amount));
+  const g = clamp(rgb.g * (1 - amount));
+  const b = clamp(rgb.b * (1 - amount));
+  return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function getSlotStyle(color, isExam) {
+  if (!color) return '';
+  const tone = isExam ? darkenHex(color, 0.25) : color;
+  const borderTone = darkenHex(color, isExam ? 0.4 : 0.18);
+  return `background:${rgbaFromHex(tone, isExam ? 0.45 : 0.28)};border-color:${rgbaFromHex(borderTone, 0.82)};`;
 }
