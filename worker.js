@@ -409,7 +409,7 @@ button:active{transform:translateY(0)}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
 a{color:var(--accent);text-decoration:none;transition:color var(--transition)}
 a:hover{color:var(--accent-pink)}
-header{display:flex;justify-content:space-between;align-items:center;min-height:64px;padding:12px 24px;background:var(--surface);border:1px solid var(--border);margin-bottom:24px;border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);flex-wrap:nowrap;gap:12px}
+header{display:flex;justify-content:space-between;align-items:center;height:64px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px}
 header strong{font-size:1.05em;letter-spacing:-0.02em}
 .user-wrap{position:relative}
 .user-btn{display:flex;align-items:center;gap:8px;color:var(--text);font-size:0.84rem;font-weight:500;padding:6px 12px 6px 10px;border-radius:var(--radius);background:transparent;border:1px solid var(--border);cursor:pointer;transition:all var(--transition);white-space:nowrap;box-shadow:none}
@@ -569,7 +569,7 @@ function renderBrand(appName = 'Todo List') {
     <span style="width:36px;height:36px;background:linear-gradient(135deg,#A855F7,#EC4899);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.05em;color:#fff;text-shadow:0 0 12px rgba(255,255,255,0.7),0 0 4px rgba(255,255,255,0.95);flex-shrink:0;box-shadow:0 2px 8px rgba(168,85,247,0.35),0 0 20px rgba(168,85,247,0.45)">111</span>
     <div style="display:flex;flex-direction:column;line-height:1.25">
       <span style="font-weight:700;font-size:1.1em;color:#fff;letter-spacing:-0.02em">111<span style="color:#A855F7;text-shadow:0 0 20px rgba(168,85,247,0.5)">iridescence</span></span>
-      <span style="font-size:0.72em;color:#94a3b8;font-weight:500;letter-spacing:0.03em">${appName}</span>
+      <span style="font-size:0.72em;color:#94a3b8;font-weight:500;letter-spacing:0.03em">Hub</span>
     </div>
   </a>`;
 }
@@ -629,8 +629,8 @@ function renderNav(active, username, basePath = '') {
     <a href="${basePath}/" class="nav-link ${active === 'boards' ? 'active' : ''}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
       Boards</a>
-    ${renderUserDropdown(username, 'Todo List')}
     ${renderAppSwitcher(basePath)}
+    ${renderUserDropdown(username, 'Todo List')}
   </div>`;
 }
 
@@ -1199,6 +1199,8 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       const EXAM_OUTLINE = '${BLOCUS_EXAM_OUTLINE}';
       const selectedSlotKeys = new Set();
       let multiSelectEnabled = false;
+      const courseEditorToggleBtn = document.getElementById('courseEditorToggleBtn');
+      const courseEditorBody = document.getElementById('courseEditorBody');
 
       function hexToRgb(hex) {
         const clean = (hex || '').replace('#', '');
@@ -1255,8 +1257,8 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
           const hh = hourSelect ? hourSelect.value : '';
           const mm = minuteSelect ? minuteSelect.value : '';
           if (!hh && !mm) return '';
-          if (!hh || !mm) return '';
-          return normalizeExamTimeValue(hh + ':' + mm);
+          if (!hh) return '';
+          return normalizeExamTimeValue(hh + ':' + (mm || '00'));
         }
 
         const legacyInput = slotEl.querySelector('.slot-exam-' + prefix);
@@ -1576,7 +1578,7 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         const isExam = input.value === '__exam__';
         slotEl.querySelector('.exam-extra').classList.toggle('hidden', !isExam);
         refreshSlot(slotEl);
-        queueSlotSave(slotEl, 40);
+        queueSlotSave(slotEl, 0);
       }
 
       async function flushSlotSave(slotEl) {
@@ -1619,8 +1621,7 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       function saveSlotFromInput(input, defer = false) {
         const slotEl = input.closest('.calendar-slot');
         refreshSlot(slotEl);
-        const isSelect = input && input.tagName === 'SELECT';
-        queueSlotSave(slotEl, defer ? 260 : (isSelect ? 40 : 0));
+        queueSlotSave(slotEl, defer ? 260 : 0);
       }
 
       function flushPendingSlotSaves() {
@@ -1691,6 +1692,13 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         updateBatchUi();
       }
 
+      function setCourseEditorOpen(open) {
+        if (!courseEditorToggleBtn || !courseEditorBody) return;
+        courseEditorToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        courseEditorBody.classList.toggle('hidden', !open);
+        localStorage.setItem(COURSE_EDITOR_STORAGE_KEY, open ? '1' : '0');
+      }
+
       async function createCourse() {
         const name = (newCourseName.value || '').trim();
         if (!name) {
@@ -1748,6 +1756,14 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
 
       modeViewBtn.addEventListener('click', () => setMode('view'));
       modeEditBtn.addEventListener('click', () => setMode('edit'));
+      if (courseEditorToggleBtn && courseEditorBody) {
+        const initialCourseEditorOpen = localStorage.getItem(COURSE_EDITOR_STORAGE_KEY);
+        setCourseEditorOpen(initialCourseEditorOpen !== '0');
+        courseEditorToggleBtn.addEventListener('click', () => {
+          const isOpen = courseEditorToggleBtn.getAttribute('aria-expanded') === 'true';
+          setCourseEditorOpen(!isOpen);
+        });
+      }
       multiSelectToggle.addEventListener('click', () => {
         if (document.body.dataset.blocusMode !== 'edit') return;
         multiSelectEnabled = !multiSelectEnabled;
