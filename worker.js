@@ -532,137 +532,160 @@ const CSS = `
   --danger:#dc2626;--danger-soft:rgba(220,38,38,0.08);
   --good:#16a34a;--good-soft:rgba(22,163,74,0.10);
   --warn:#b45309;
-  --radius-sm:3px;--radius:6px;--radius-md:6px;--radius-lg:18px;--radius-xl:18px;
+  --radius-sm:3px;--radius:6px;--radius-md:6px;--radius-lg:18px;--radius-xl:18px;--radius-hero:12.8px;
   --transition:150ms ease-out;
-  --shadow-sm:rgba(0,0,0,0.1) 0px 2px 8px 0px, rgba(0,0,0,0.1) 0px 0px 2px 0px;
-  --shadow:rgba(0,0,0,0.1) 0px 2px 8px 0px, rgba(0,0,0,0.1) 0px 0px 2px 0px;
-  --shadow-lg:rgba(0,0,0,0.1) 0px 2px 8px 0px, rgba(0,0,0,0.1) 0px 0px 2px 0px;
-  --gradient:#4f91fb;
-  --gradient-subtle:rgba(37,118,235,0.06);
+  --shadow-sm:rgba(0,0,0,0.08) 0px 2px 8px 0px, rgba(0,0,0,0.06) 0px 0px 2px 0px;
+  --shadow:rgba(0,0,0,0.08) 0px 2px 8px 0px, rgba(0,0,0,0.06) 0px 0px 2px 0px;
+  --shadow-lg:rgba(0,0,0,0.10) 0px 8px 28px 0px, rgba(0,0,0,0.06) 0px 0px 2px 0px;
   --font:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  --font-mono:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  /* legacy aliases used by inline styles */
+  --font-mono:var(--font);
+  --text-caption:13px;--text-body:16px;--text-subheading:18px;--text-heading:24px;--text-display:36px;
+  --leading-caption:1.4;--leading-body:1.6;--leading-subheading:1.35;--leading-heading:1.25;--leading-display:1.2;
+  --page-max:900px;--page-wide:1200px;--section-gap:48px;
   --card:var(--surface);--txt-main:var(--text);--txt-muted:var(--text-secondary);
   --p:var(--accent);--err:var(--danger);
 }
 *,*::before,*::after{box-sizing:border-box}
-body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
-body > :not(header):not(script):not(.modal){max-width:1400px;margin-left:auto;margin-right:auto;padding-left:20px;padding-right:20px}
-h1,h2,h3,h4{letter-spacing:-0.01em;font-weight:700;margin:0;color:var(--text)}
+html,body{height:auto}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);line-height:var(--leading-body);font-size:var(--text-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body > :not(header):not(script):not(.modal){max-width:var(--page-max);margin-left:auto;margin-right:auto;padding-left:24px;padding-right:24px}
+body.wide > :not(header):not(script):not(.modal){max-width:var(--page-wide)}
+body.full > :not(header):not(script):not(.modal){max-width:none;padding-left:32px;padding-right:32px}
+h1,h2,h3,h4{letter-spacing:-0.015em;font-weight:700;margin:0;color:var(--text)}
+h1{font-size:var(--text-display);line-height:var(--leading-display);font-weight:800;letter-spacing:-0.02em}
+h2{font-size:var(--text-heading);line-height:var(--leading-heading)}
+h3{font-size:var(--text-subheading);line-height:var(--leading-subheading);font-weight:700}
+h4{font-size:var(--text-body);line-height:var(--leading-body);font-weight:700}
+p{margin:0;color:var(--text-secondary)}
 ::selection{background:var(--accent-glow)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 input,textarea,select,button{font:inherit;color:inherit}
-input,textarea,select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:var(--radius);margin:4px 0;transition:all var(--transition);font-size:0.95em}
-input::placeholder,textarea::placeholder{color:var(--text-muted)}
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);background:var(--bg);box-shadow:0 0 0 3px var(--accent-glow)}
-button{cursor:pointer;background:var(--action);color:#fff;font-weight:600;border:none;padding:7px 17px;border-radius:var(--radius);transition:background var(--transition),color var(--transition),border-color var(--transition);font-size:0.95em;box-shadow:none}
+input,textarea,select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:var(--radius);margin:0;transition:border-color var(--transition);font-size:var(--text-body);line-height:1.4;width:100%}
+input::placeholder,textarea::placeholder{color:var(--subtle-ash,var(--text-muted))}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);background:var(--bg);box-shadow:none}
+button{cursor:pointer;background:var(--action);color:#fff;font-weight:600;border:1px solid transparent;padding:7px 17px;border-radius:var(--radius);transition:background var(--transition),color var(--transition),border-color var(--transition);font-size:var(--text-body);line-height:1.3;box-shadow:none}
 button:hover{background:var(--accent-pink)}
 button:active{background:var(--accent)}
-.card{background:var(--surface);padding:18px;border-radius:var(--radius-lg);margin-bottom:20px;border:none;box-shadow:none}
+button.ghost,.btn-ghost{background:transparent;color:var(--accent);border:1px solid transparent;font-weight:600}
+button.ghost:hover,.btn-ghost:hover{background:var(--surface);color:var(--accent)}
+button.subtle{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}
+button.subtle:hover{background:var(--surface);color:var(--text);border-color:var(--border)}
+button.danger,.btn-danger{background:transparent;color:var(--text-secondary);border:1px solid var(--border);font-weight:600}
+button.danger:hover,.btn-danger:hover{background:transparent;color:var(--danger);border-color:var(--danger)}
+.card{background:var(--surface);padding:18px;border-radius:var(--radius-lg);margin-bottom:24px;border:none;box-shadow:none}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
 a{color:var(--accent);text-decoration:none;transition:color var(--transition)}
 a:hover{color:var(--accent-pink)}
-header{display:flex;justify-content:space-between;align-items:center;height:64px;padding:0 24px;background:var(--bg);border-bottom:1px solid var(--border);box-shadow:none;position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px;margin-bottom:20px}
-header strong{font-size:1.05em;letter-spacing:-0.02em;color:var(--text)}
+.page-hero{margin:48px 0 32px}
+.page-hero h1{margin:0 0 8px}
+.page-hero p{font-size:var(--text-subheading);line-height:var(--leading-subheading);color:var(--text-secondary)}
+.page-section{margin-top:var(--section-gap)}
+.page-section-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:16px}
+.page-section-head h2{margin:0}
+.page-section-head .helper{color:var(--text-muted);font-size:var(--text-caption);line-height:var(--leading-caption);font-weight:500}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:24px}
+header{display:flex;justify-content:space-between;align-items:center;height:60px;padding:0 24px;background:var(--bg);border-bottom:1px solid var(--border);box-shadow:none;position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px;margin:0 0 0}
+header strong{font-size:var(--text-body);letter-spacing:-0.02em;color:var(--text);font-weight:700}
 .user-wrap{position:relative}
-.user-btn{display:flex;align-items:center;gap:8px;color:var(--text);font-size:0.9rem;font-weight:600;padding:6px 12px 6px 10px;border-radius:var(--radius);background:transparent;border:1px solid var(--border);cursor:pointer;transition:all var(--transition);white-space:nowrap;box-shadow:none}
-.user-btn:hover{background:var(--surface);transform:none;box-shadow:none}
+.user-btn{display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:var(--text-caption);font-weight:600;padding:6px 10px;border-radius:var(--radius);background:transparent;border:1px solid transparent;cursor:pointer;transition:background var(--transition),color var(--transition);white-space:nowrap;box-shadow:none}
+.user-btn:hover{background:var(--surface);color:var(--text)}
 .user-btn .caret{transition:transform var(--transition);margin-left:2px;color:var(--text-muted)}
 .user-wrap.open .user-btn .caret{transform:rotate(180deg)}
-.dd{display:none;position:absolute;right:0;top:calc(100% + 8px);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:240px;box-shadow:var(--shadow-sm);z-index:999;overflow:hidden}
+.dd{display:none;position:absolute;right:0;top:calc(100% + 8px);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:260px;box-shadow:var(--shadow-lg);z-index:999;overflow:hidden}
 .user-wrap.open .dd{display:block;animation:dd 150ms ease-out}
-@keyframes dd{from{opacity:0;transform:translateY(-4px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
-.dd-hdr{padding:14px 16px 12px;border-bottom:1px solid var(--border)}
-.dd-name{font-weight:700;font-size:0.95rem;margin-bottom:7px;color:var(--text)}
-.role-badge{display:inline-flex;align-items:center;gap:5px;font-size:0.7rem;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.04em;margin-bottom:9px;text-transform:uppercase;background:var(--accent-soft);color:var(--accent)}
+@keyframes dd{from{opacity:0;transform:translateY(-4px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.dd-hdr{padding:16px 18px 14px;border-bottom:1px solid var(--border)}
+.dd-name{font-weight:700;font-size:var(--text-body);margin-bottom:8px;color:var(--text);letter-spacing:-0.01em}
+.role-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.04em;margin-bottom:10px;text-transform:uppercase;background:var(--accent-soft);color:var(--accent)}
 .perm-list{list-style:none;padding:0;margin:0}
-.perm-list li{font-size:0.8rem;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px}
+.perm-list li{font-size:var(--text-caption);color:var(--text-secondary);padding:3px 0;display:flex;align-items:center;gap:8px}
 .perm-list li.ok{color:var(--text)}
 .pcheck{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;font-weight:700}
 .pcheck.y{background:var(--good-soft);color:var(--good)}
 .pcheck.n{background:var(--surface);color:var(--text-muted)}
-.ddl{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--text);text-decoration:none;font-size:0.9rem;font-weight:500;transition:background var(--transition)}
+.ddl{display:flex;align-items:center;gap:10px;padding:10px 18px;color:var(--text);text-decoration:none;font-size:var(--text-body);font-weight:500;transition:background var(--transition),color var(--transition)}
 .ddl:hover{background:var(--surface);color:var(--accent)}
 .dd-sep{height:1px;background:var(--border);margin:4px 0}
 .ddl.out{color:var(--danger)!important}
 .ddl.out:hover{background:var(--danger-soft)!important;color:var(--danger)}
-.nav-link{padding:7px 14px;border-radius:var(--radius);background:transparent;border:none;color:var(--text-muted);font-weight:600;font-size:0.9rem;line-height:1.3;transition:color var(--transition);display:inline-flex;align-items:center;gap:6px}
+.nav-link{padding:6px 0;margin:0 6px;border-radius:0;background:transparent;border:none;color:var(--text-muted);font-weight:600;font-size:15px;line-height:1.3;transition:color var(--transition);display:inline-flex;align-items:center;gap:6px}
 .nav-link:hover{color:var(--accent)}
 .nav-link.active{color:var(--accent);background:transparent;border-color:transparent;box-shadow:none}
-.board-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin-top:20px}
-.board-item{background:var(--surface);padding:18px;border-radius:var(--radius-lg);border:none;cursor:pointer;transition:background var(--transition);box-shadow:none;position:relative;overflow:hidden}
+.board-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin:0}
+.board-item{background:var(--surface);padding:20px 22px;border-radius:var(--radius-lg);border:none;cursor:pointer;transition:background var(--transition);box-shadow:none;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:10px;min-height:120px}
 .board-item::before{content:none}
-.board-item:hover{background:var(--surface-hover);transform:none;box-shadow:var(--shadow-sm)}
-.board-item h3{margin-bottom:10px;font-size:1.1rem;font-weight:700;letter-spacing:-0.01em}
-.board-item .meta{color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;font-family:var(--font)}
-.board-item button{background:transparent;border:1px solid var(--border);color:var(--text-secondary);box-shadow:none;padding:6px 12px;font-size:0.85rem}
-.board-item button:hover{background:var(--bg);color:var(--danger);border-color:var(--danger);box-shadow:none}
-.kanban{display:flex;gap:16px;overflow-x:auto;padding:6px 4px 20px;min-height:70vh}
+.board-item:hover{background:var(--surface-hover);transform:none;box-shadow:none}
+.board-item h3{margin:0;font-size:var(--text-subheading);font-weight:700;letter-spacing:-0.01em;line-height:1.3}
+.board-item .meta{color:var(--text-muted);font-size:var(--text-caption);line-height:var(--leading-caption);margin:0;font-weight:500}
+.board-item .actions{margin-top:auto;display:flex;justify-content:flex-end;opacity:0;transition:opacity var(--transition)}
+.board-item:hover .actions{opacity:1}
+.board-item button{background:transparent;border:1px solid transparent;color:var(--text-muted);box-shadow:none;padding:4px 10px;font-size:var(--text-caption);font-weight:600;border-radius:var(--radius)}
+.board-item button:hover{background:transparent;color:var(--danger);border-color:var(--danger)}
+.empty-state{padding:48px 24px;text-align:center;color:var(--text-muted);background:var(--surface);border-radius:var(--radius-lg);font-size:var(--text-body)}
+.kanban{display:flex;gap:20px;overflow-x:auto;padding:8px 4px 24px;min-height:70vh}
 .kanban::-webkit-scrollbar{height:8px}
 .kanban::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px}
 .list{min-width:300px;max-width:300px;background:var(--surface);border:none;border-radius:var(--radius-lg);display:flex;flex-direction:column;max-height:calc(100vh - 180px);transition:transform var(--transition),opacity var(--transition);box-shadow:none}
 .list.dragging{opacity:0.4;transform:scale(0.97)}
 .list.placeholder{background:var(--accent-soft);border:2px dashed var(--accent);opacity:0.7;min-height:200px;border-radius:var(--radius-lg)}
-.list-header{background:transparent;padding:14px 16px 10px;border-radius:var(--radius-lg) var(--radius-lg) 0 0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);user-select:none;gap:8px}
-.list-header input{background:transparent;border:none;color:var(--text);font-weight:700;font-size:0.95rem;padding:3px 6px;margin:0;flex:1;box-shadow:none;letter-spacing:-0.01em}
-.list-header input:focus{background:var(--bg);border-radius:var(--radius-sm);box-shadow:0 0 0 2px var(--accent-glow)}
-.list-header .count{background:var(--accent-soft);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:0.72rem;font-weight:700;font-family:var(--font)}
-.list-header button{background:transparent;color:var(--text-muted);border:none;padding:5px 7px;font-size:0.9em;cursor:pointer;border-radius:var(--radius-sm);box-shadow:none}
-.list-header button:hover{color:var(--danger);background:var(--danger-soft);transform:none;box-shadow:none}
-.cards{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+.list-header{background:transparent;padding:16px 18px 12px;border-radius:var(--radius-lg) var(--radius-lg) 0 0;display:flex;justify-content:space-between;align-items:center;border-bottom:none;user-select:none;gap:8px}
+.list-header input{background:transparent;border:1px solid transparent;color:var(--text);font-weight:700;font-size:var(--text-subheading);padding:2px 4px;margin:0;flex:1;box-shadow:none;letter-spacing:-0.01em;line-height:1.3;width:auto}
+.list-header input:focus{background:var(--bg);border-color:var(--accent);border-radius:var(--radius-sm);box-shadow:none}
+.list-header .count{background:transparent;color:var(--text-muted);padding:0 4px;border-radius:999px;font-size:var(--text-caption);font-weight:600;font-family:var(--font);min-width:20px;text-align:right}
+.list-header button{background:transparent;color:var(--text-muted);border:1px solid transparent;padding:4px 8px;font-size:var(--text-caption);cursor:pointer;border-radius:var(--radius-sm);box-shadow:none}
+.list-header button:hover{color:var(--danger);background:transparent;border-color:transparent;transform:none;box-shadow:none}
+.cards{flex:1;overflow-y:auto;padding:0 12px 12px;display:flex;flex-direction:column;gap:8px}
 .cards::-webkit-scrollbar{width:4px}
 .cards::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px}
-.task-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;cursor:grab;position:relative;transition:box-shadow var(--transition),border-color var(--transition);box-shadow:none}
-.task-card:hover{border-color:var(--accent);box-shadow:var(--shadow-sm);transform:none}
+.task-card{background:var(--bg);border:1px solid transparent;border-radius:var(--radius);padding:12px 14px;cursor:grab;position:relative;transition:box-shadow var(--transition),border-color var(--transition);box-shadow:var(--shadow-sm)}
+.task-card:hover{border-color:transparent;box-shadow:var(--shadow);transform:none}
 .task-card:hover .card-actions{opacity:1}
-.task-card:active{cursor:grabbing;transform:scale(0.98)}
-.task-card.dragging{opacity:0.4;transform:scale(0.95);box-shadow:none}
-.card-title{font-weight:600;margin-bottom:4px;line-height:1.4;color:var(--text);font-size:0.95rem}
-.card-desc{color:var(--text-secondary);font-size:0.85rem;margin-top:6px;line-height:1.5}
+.task-card:active{cursor:grabbing;transform:scale(0.99)}
+.task-card.dragging{opacity:0.4;transform:scale(0.97);box-shadow:none}
+.card-title{font-weight:600;margin-bottom:2px;line-height:1.4;color:var(--text);font-size:var(--text-body)}
+.card-desc{color:var(--text-secondary);font-size:var(--text-caption);margin-top:6px;line-height:var(--leading-caption)}
 .card-actions{opacity:0;display:flex;gap:6px;margin-top:10px;transition:opacity var(--transition);pointer-events:auto;border-top:1px solid var(--border);padding-top:10px}
 .task-card:hover .card-actions,.card-actions:hover,.card-actions:focus-within{opacity:1!important}
-.card-actions button{background:transparent;color:var(--text-muted);border:1px solid var(--border);padding:5px 10px;border-radius:var(--radius-sm);font-size:0.78rem;cursor:pointer;pointer-events:all;box-shadow:none;font-weight:500;flex:1}
+.card-actions button{background:transparent;color:var(--text-muted);border:1px solid transparent;padding:4px 10px;border-radius:var(--radius-sm);font-size:var(--text-caption);cursor:pointer;pointer-events:all;box-shadow:none;font-weight:600;flex:1}
 .card-actions button:hover{background:var(--surface);color:var(--text);transform:none;box-shadow:none}
-.card-actions button.del:hover{color:var(--danger);background:var(--danger-soft);border-color:var(--danger)}
-.add-card{padding:10px;margin:10px;background:transparent;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);text-align:center;cursor:pointer;font-size:0.85rem;font-weight:600;transition:all var(--transition)}
-.add-card:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
-.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(48,51,54,0.40);backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center}
+.card-actions button.del:hover{color:var(--danger);background:transparent;border-color:transparent}
+.add-card{padding:10px 14px;margin:0 12px 12px;background:transparent;border:none;border-radius:var(--radius);color:var(--text-muted);text-align:left;cursor:pointer;font-size:var(--text-caption);font-weight:600;transition:color var(--transition),background var(--transition);width:auto}
+.add-card:hover{color:var(--accent);background:transparent}
+.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(48,51,54,0.32);backdrop-filter:blur(8px);z-index:1000;align-items:center;justify-content:center;padding:20px}
 .modal.active{display:flex;animation:fadeIn 0.2s ease-out}
-@keyframes fadeIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
-.modal-content{background:var(--bg);padding:28px;border-radius:var(--radius-xl);border:1px solid var(--border);max-width:500px;width:90%;box-shadow:var(--shadow-sm)}
-.modal-content h3{margin-bottom:20px;font-size:1.15rem;font-weight:700;letter-spacing:-0.01em}
-.form-group{margin-bottom:16px}
-.form-group label{display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;font-weight:600;letter-spacing:0.02em}
+@keyframes fadeIn{from{opacity:0;transform:scale(0.98)}to{opacity:1;transform:scale(1)}}
+.modal-content{background:var(--bg);padding:32px;border-radius:var(--radius-xl);border:none;max-width:480px;width:100%;box-shadow:var(--shadow-lg)}
+.modal-content h3{margin:0 0 20px;font-size:var(--text-heading);line-height:var(--leading-heading);font-weight:700;letter-spacing:-0.015em}
+.form-group{margin-bottom:18px}
+.form-group label{display:block;margin-bottom:6px;color:var(--text-secondary);font-size:var(--text-caption);line-height:var(--leading-caption);font-weight:600;letter-spacing:0}
 .form-group input,.form-group textarea,.form-group select{width:100%}
 .btn-group{display:flex;gap:10px;margin-top:24px}
 .btn-group button{flex:1}
-.btn-danger{background:transparent;border:1px solid var(--border);color:var(--text);box-shadow:none}
-.btn-danger:hover{background:var(--danger-soft);color:var(--danger);border-color:var(--danger);transform:none;box-shadow:none}
-.section-title{font-size:1.05rem;font-weight:700;margin:18px 0 8px;color:var(--text)}
-.input-row{display:flex;gap:8px;align-items:flex-end}
+.section-title{font-size:var(--text-heading);line-height:var(--leading-heading);font-weight:700;margin:0 0 16px;color:var(--text);letter-spacing:-0.015em}
+.input-row{display:flex;gap:10px;align-items:flex-end}
 .input-row>*{flex:1}
-.small-btn{padding:8px 12px;white-space:nowrap}
-.course-builder-list{display:flex;flex-direction:column;gap:8px;max-height:180px;overflow:auto;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg)}
-.course-builder-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg)}
-.course-color-dot{width:12px;height:12px;border-radius:999px;display:inline-block;flex-shrink:0}
+.small-btn{padding:8px 14px;white-space:nowrap}
+.course-builder-list{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow:auto;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg)}
+.course-builder-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:none;border-radius:var(--radius);background:var(--surface)}
+.course-color-dot{width:10px;height:10px;border-radius:999px;display:inline-block;flex-shrink:0}
 .chip-list{display:flex;flex-wrap:wrap;gap:6px}
-.chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:0.78rem;border:1px solid var(--border);background:var(--bg);color:var(--text-secondary)}
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:var(--text-caption);font-weight:600;border:none;background:var(--surface);color:var(--text-secondary)}
 .hidden{display:none!important}
-.mode-toggle{display:flex;gap:8px;margin-bottom:14px}
-.mode-btn{background:transparent;border:1px solid var(--border);color:var(--text-secondary);box-shadow:none;padding:8px 12px}
-.mode-btn:hover{transform:none;background:var(--surface);color:var(--text)}
-.mode-btn.active{background:var(--action);color:#fff;border-color:transparent}
-.calendar-meta{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;color:var(--text-secondary);font-size:0.85rem}
-.calendar-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.calendar-legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
-.calendar-legend-item{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--bg)}
-.calendar-legend-item .name{font-size:0.85rem;font-weight:600;color:var(--text)}
-.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:12px}
-.calendar-empty{border:1px dashed transparent;min-height:210px}
+.mode-toggle{display:inline-flex;gap:0;margin-bottom:18px;padding:3px;background:var(--surface);border-radius:var(--radius);align-items:center}
+.mode-btn{background:transparent;border:none;color:var(--text-secondary);box-shadow:none;padding:6px 14px;font-size:var(--text-caption);font-weight:600;border-radius:calc(var(--radius) - 2px)}
+.mode-btn:hover{transform:none;background:transparent;color:var(--text)}
+.mode-btn.active{background:var(--bg);color:var(--text);border-color:transparent;box-shadow:var(--shadow-sm)}
+.calendar-meta{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:14px;color:var(--text-secondary);font-size:var(--text-caption)}
+.calendar-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.calendar-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.calendar-legend-item{display:flex;gap:8px;align-items:center;padding:5px 12px;border:none;border-radius:999px;background:var(--surface)}
+.calendar-legend-item .name{font-size:var(--text-caption);font-weight:600;color:var(--text)}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:10px}
+.calendar-empty{border:none;min-height:210px}
 .calendar-day{min-height:210px;background:var(--surface);border:none;border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden}
-.calendar-day-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);background:transparent;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:700}
-.calendar-day-head .day-num{font-size:1rem;font-weight:700;color:var(--text)}
-.calendar-slot{flex:1;display:flex;flex-direction:column;gap:6px;padding:10px;border-top:1px solid var(--border);background:transparent;transition:background var(--transition),border-color var(--transition);--slot-label-color:var(--text-muted);--slot-main-color:var(--text);--slot-empty-color:var(--text-muted);--slot-badge-bg:var(--accent-soft);--slot-badge-border:transparent;--slot-badge-color:var(--accent);--slot-note-color:var(--text-secondary);--slot-countdown-color:var(--text);--slot-divider-color:var(--border)}
+.calendar-day-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border);background:transparent;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:700}
+.calendar-day-head .day-num{font-size:var(--text-body);font-weight:700;color:var(--text);letter-spacing:-0.01em}
+.calendar-slot{flex:1;display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-top:1px solid var(--border);background:transparent;transition:background var(--transition),border-color var(--transition);--slot-label-color:var(--text-muted);--slot-main-color:var(--text);--slot-empty-color:var(--text-muted);--slot-badge-bg:var(--accent-soft);--slot-badge-border:transparent;--slot-badge-color:var(--accent);--slot-note-color:var(--text-secondary);--slot-countdown-color:var(--text);--slot-divider-color:var(--border)}
 .calendar-slot:first-of-type{border-top:none}
 .calendar-slot.selectable{cursor:pointer}
 .calendar-slot.selected{box-shadow:inset 0 0 0 2px var(--accent);border-color:var(--accent)!important}
@@ -805,13 +828,22 @@ function renderSettings(user, basePath = '') {
       ${renderBrand('Todo List')}
       ${renderNav('settings', user, basePath)}
     </header>
-    <div class="card">
-      <h3>Change Password</h3>
-      <form onsubmit="event.preventDefault();changePw(this)">
-        <input type="password" name="p" placeholder="New Password" required><br>
-        <button style="margin-top:12px">Update Password</button>
-      </form>
+    <div class="page-hero">
+      <h1>Settings</h1>
+      <p>Manage your account.</p>
     </div>
+    <section class="page-section">
+      <div class="page-section-head"><h2>Change password</h2></div>
+      <div class="card">
+        <form onsubmit="event.preventDefault();changePw(this)">
+          <div class="form-group">
+            <label>New password</label>
+            <input type="password" name="p" required>
+          </div>
+          <button>Update password</button>
+        </form>
+      </div>
+    </section>
     <script>
       async function changePw(f){
         const r = await fetch(BASE + '/api/password',{method:'POST',body:new FormData(f)});
@@ -829,34 +861,40 @@ function renderDash(user, boards, blocusBoards = [], basePath = '') {
     ${renderNav('boards', user, basePath)}
   </header>
 
-  <div style="margin-bottom:20px;display:flex;gap:10px;flex-wrap:wrap">
-    <button onclick="showModal()">+ New Board</button>
-    <button onclick="showBlocusModal()">+ New Blocus Calendar</button>
+  <div class="page-hero">
+    <h1>Your boards</h1>
+    <p>Plan tasks on kanban boards or schedule revision time on a blocus calendar.</p>
+    <div class="toolbar">
+      <button onclick="showModal()">New board</button>
+      <button class="ghost" onclick="showBlocusModal()">New blocus calendar</button>
+    </div>
   </div>
 
-  <h2 class="section-title">Kanban Boards</h2>
-  <div class="board-grid">
-    ${boards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#838b96">No boards yet. Create your first board!</div>' : ''}
+  <section class="page-section">
+    <div class="page-section-head"><h2>Kanban boards</h2><span class="helper">${boards.length} ${boards.length === 1 ? 'board' : 'boards'}</span></div>
+    ${boards.length === 0 ? '<div class="empty-state">No boards yet. Create your first board to get started.</div>' : `<div class="board-grid">
     ${boards.map(b => `
         <div class="board-item" onclick="location.href='${basePath}/board/${b.id}'">
           <h3>${escapeHtml(b.name)}</h3>
           <div class="meta">Created ${new Date(b.created_at).toLocaleDateString()}</div>
-          <button onclick="event.stopPropagation();deleteBoard('${b.id}')" style="background:var(--err)">Delete</button>
+          <div class="actions"><button class="danger" onclick="event.stopPropagation();deleteBoard('${b.id}')">Delete</button></div>
         </div>
       `).join('')}
-  </div>
+  </div>`}
+  </section>
 
-  <h2 class="section-title" style="margin-top:28px">Blocus Calendars</h2>
-  <div class="board-grid">
-    ${blocusBoards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#838b96">No blocus calendar yet. Create one to plan your revision period.</div>' : ''}
+  <section class="page-section">
+    <div class="page-section-head"><h2>Blocus calendars</h2><span class="helper">${blocusBoards.length} ${blocusBoards.length === 1 ? 'calendar' : 'calendars'}</span></div>
+    ${blocusBoards.length === 0 ? '<div class="empty-state">No blocus calendar yet. Create one to plan your revision period.</div>' : `<div class="board-grid">
     ${blocusBoards.map(b => `
         <div class="board-item" onclick="location.href='${basePath}/blocus/${b.id}'">
           <h3>${escapeHtml(b.name)}</h3>
           <div class="meta">${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</div>
-          <button onclick="event.stopPropagation();deleteBlocus('${b.id}')" style="background:var(--err)">Delete</button>
+          <div class="actions"><button class="danger" onclick="event.stopPropagation();deleteBlocus('${b.id}')">Delete</button></div>
         </div>
       `).join('')}
-  </div>
+  </div>`}
+  </section>
 
   <!-- Board modal -->
   <div id="modal" class="modal">
@@ -1295,7 +1333,7 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
     return `<div class="calendar-grid">${leading}${days.map(renderDayCard).join('')}</div>`;
   };
 
-  return `<!DOCTYPE html><html lang="en"><head><title>${escapeHtml(blocus.name)} · Blocus</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/svg+xml" href="${FAVICON}"><style>${CSS}</style></head><body>
+  return `<!DOCTYPE html><html lang="en"><head><title>${escapeHtml(blocus.name)} · Blocus</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/svg+xml" href="${FAVICON}"><style>${CSS}</style></head><body class="wide">
     <header>
       <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
         ${renderBrand('Todo List')}
@@ -1307,10 +1345,9 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       ${renderNav('', user, basePath)}
     </header>
 
-    <div class="calendar-meta">
-      <div><strong>Period:</strong> ${escapeHtml(blocus.start_date)} → ${escapeHtml(blocus.end_date)}</div>
-      <div><strong>Slots per day:</strong> Morning + Afternoon</div>
-      <div><strong>Rule:</strong> choose a course/subsection, or set <em>Exam day</em> with details</div>
+    <div class="page-hero" style="margin:32px 0 24px">
+      <h1 style="font-size:28px">${escapeHtml(blocus.name)}</h1>
+      <p>${escapeHtml(blocus.start_date)} → ${escapeHtml(blocus.end_date)} · Morning + Afternoon slots · Pick a course/subsection or mark an exam day.</p>
     </div>
 
     <div class="calendar-toolbar">
@@ -2119,7 +2156,7 @@ function renderBoard(user, board, lists, cards, basePath = '') {
     cardsByList[c.list_id].push(c);
   });
 
-  return `<!DOCTYPE html><html lang="en"><head><title>${board.name} · 111iridescence</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body>
+  return `<!DOCTYPE html><html lang="en"><head><title>${board.name} · 111iridescence</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CSS}</style></head><body class="full">
     <header>
       <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
         ${renderBrand()}
@@ -2131,8 +2168,9 @@ function renderBoard(user, board, lists, cards, basePath = '') {
       ${renderNav('', user, basePath)}
     </header>
 
-  <div style="margin-bottom:15px">
-    <button onclick="showListModal()">+ Add List</button>
+  <div class="page-hero" style="margin:32px 0 24px">
+    <h1 style="font-size:28px">${escapeHtml(board.name)}</h1>
+    <div class="toolbar"><button onclick="showListModal()">New list</button></div>
   </div>
 
   <div class="kanban" ondrop="dropList(event)" ondragover="dragOverList(event)">
