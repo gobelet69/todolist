@@ -133,6 +133,27 @@ export default {
       if (!blocus) return new Response('Calendar not found.', { status: 404 });
       if (!isDateInRange(day, blocus.start_date, blocus.end_date)) return new Response('Date is out of range for this calendar.', { status: 400 });
 
+      const { results: rowsBeforeSave } = await env.DB.prepare(
+        `SELECT period, course_id, section_id, is_exam, exam_note, exam_start_time, exam_end_time
+         FROM blocus_slots
+         WHERE blocus_id = ? AND day = ? AND username = ?`
+      ).bind(blocusId, day, user.username).all();
+      const beforeMorning = rowsBeforeSave.find(row => row.period === 'morning');
+      const beforeAfternoon = rowsBeforeSave.find(row => row.period === 'afternoon');
+      const wasMirroredAllDay = Boolean(
+        beforeMorning &&
+        beforeAfternoon &&
+        Number(beforeMorning.is_exam) === 1 &&
+        Number(beforeAfternoon.is_exam) === 1 &&
+        (beforeMorning.course_id || '') === (beforeAfternoon.course_id || '') &&
+        (beforeMorning.section_id || '') === (beforeAfternoon.section_id || '') &&
+        (beforeMorning.exam_note || '') === (beforeAfternoon.exam_note || '') &&
+        (normalizeExamTime(beforeMorning.exam_start_time || '') || '') &&
+        (normalizeExamTime(beforeMorning.exam_end_time || '') || '') &&
+        (normalizeExamTime(beforeMorning.exam_start_time || '') || '') === (normalizeExamTime(beforeAfternoon.exam_start_time || '') || '') &&
+        (normalizeExamTime(beforeMorning.exam_end_time || '') || '') === (normalizeExamTime(beforeAfternoon.exam_end_time || '') || '')
+      );
+
       if (sectionId) {
         const section = await env.DB.prepare(
           'SELECT s.id, s.course_id FROM blocus_course_sections s INNER JOIN blocus_courses c ON c.id = s.course_id WHERE s.id = ? AND s.blocus_id = ? AND c.username = ?'
@@ -151,41 +172,140 @@ export default {
 
       if (!isExam) {
         if (!courseId && !sectionId && !examNote && !examStartTime && !examEndTime) {
-          await env.DB.prepare(
-            'DELETE FROM blocus_slots WHERE blocus_id = ? AND day = ? AND period = ? AND username = ?'
-          ).bind(blocusId, day, period, user.username).run();
-          return new Response('OK');
+          if (wasMirroredAllDay) {
+            await env.DB.prepare(
+              'DELETE FROM blocus_slots WHERE blocus_id = ? AND day = ? AND period IN (?, ?) AND username = ?'
+            ).bind(blocusId, day, 'morning', 'afternoon', user.username).run();
+          } else {
+            await env.DB.prepare(
+              'DELETE FROM blocus_slots WHERE blocus_id = ? AND day = ? AND period = ? AND username = ?'
+            ).bind(blocusId, day, period, user.username).run();
+          }
+          const { results: rowsAfterDelete } = await env.DB.prepare(
+            `SELECT period, course_id, section_id, is_exam, exam_note, exam_start_time, exam_end_time
+             FROM blocus_slots
+             WHERE blocus_id = ? AND day = ? AND username = ?`
+          ).bind(blocusId, day, user.username).all();
+          const slots = {
+            morning: { period: 'morning', courseId: '', sectionId: '', isExam: 0, examNote: '', examStartTime: '', examEndTime: '' },
+            afternoon: { period: 'afternoon', courseId: '', sectionId: '', isExam: 0, examNote: '', examStartTime: '', examEndTime: '' }
+          };
+          rowsAfterDelete.forEach(row => {
+            if (!slots[row.period]) return;
+            slots[row.period] = {
+              period: row.period,
+              courseId: row.course_id || '',
+              sectionId: row.section_id || '',
+              isExam: Number(row.is_exam) === 1 ? 1 : 0,
+              examNote: row.exam_note || '',
+              examStartTime: row.exam_start_time || '',
+              examEndTime: row.exam_end_time || ''
+            };
+          });
+          return new Response(JSON.stringify({ day, slots, appliedPeriods: [] }), {
+            headers: { 'Content-Type': 'application/json' }
+          });
         }
       }
 
-      await env.DB.prepare(
-        `INSERT INTO blocus_slots (id, blocus_id, username, day, period, course_id, section_id, is_exam, exam_note, exam_start_time, exam_end_time, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(blocus_id, day, period) DO UPDATE SET
-            course_id = excluded.course_id,
-            section_id = excluded.section_id,
-            is_exam = excluded.is_exam,
+      const toMinutes = (time) => {
+        if (!time) return null;
+        const [hhRaw, mmRaw] = String(time).split(':');
+        const hh = Number(hhRaw);
+        const mm = Number(mmRaw);
+        if (!Number.isInteger(hh) || !Number.isInteger(mm)) return null;
+        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+        return (hh * 60) + mm;
+      };
+
+      let targetPeriods = [period];
+      if (isExam && examStartTime && examEndTime) {
+        const startMinutes = toMinutes(examStartTime);
+        const endMinutes = toMinutes(examEndTime);
+        if (startMinutes !== null && endMinutes !== null) {
+          const noon = 12 * 60;
+          if (startMinutes >= noon && endMinutes >= noon) {
+            targetPeriods = ['afternoon'];
+          } else if (startMinutes < noon && endMinutes <= noon) {
+            targetPeriods = ['morning'];
+          } else {
+            targetPeriods = ['morning', 'afternoon'];
+          }
+        }
+      }
+
+      const upsertSlotForPeriod = async (targetPeriod) => {
+        await env.DB.prepare(
+          `INSERT INTO blocus_slots (id, blocus_id, username, day, period, course_id, section_id, is_exam, exam_note, exam_start_time, exam_end_time, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(blocus_id, day, period) DO UPDATE SET
+             course_id = excluded.course_id,
+             section_id = excluded.section_id,
+             is_exam = excluded.is_exam,
              exam_note = excluded.exam_note,
              exam_start_time = excluded.exam_start_time,
              exam_end_time = excluded.exam_end_time,
              updated_at = excluded.updated_at
-         WHERE excluded.updated_at >= blocus_slots.updated_at`
-      ).bind(
-        crypto.randomUUID(),
-        blocusId,
-        user.username,
-        day,
-        period,
-        courseId || null,
-        sectionId || null,
-        isExam ? 1 : 0,
-        isExam ? examNote : '',
-        isExam ? (examStartTime || '') : '',
-        isExam ? (examEndTime || '') : '',
-        updateTimestamp
-      ).run();
+           WHERE excluded.updated_at >= blocus_slots.updated_at`
+        ).bind(
+          crypto.randomUUID(),
+          blocusId,
+          user.username,
+          day,
+          targetPeriod,
+          courseId || null,
+          sectionId || null,
+          isExam ? 1 : 0,
+          isExam ? examNote : '',
+          isExam ? (examStartTime || '') : '',
+          isExam ? (examEndTime || '') : '',
+          updateTimestamp
+        ).run();
+      };
 
-      return new Response('OK');
+      for (const targetPeriod of targetPeriods) {
+        await upsertSlotForPeriod(targetPeriod);
+      }
+
+      const periodsToDelete = [];
+      if (wasMirroredAllDay) {
+        ['morning', 'afternoon'].forEach(periodName => {
+          if (!targetPeriods.includes(periodName)) periodsToDelete.push(periodName);
+        });
+      } else if (isExam && targetPeriods.length === 1 && targetPeriods[0] !== period) {
+        periodsToDelete.push(period);
+      }
+      for (const periodName of periodsToDelete) {
+        await env.DB.prepare(
+          'DELETE FROM blocus_slots WHERE blocus_id = ? AND day = ? AND period = ? AND username = ?'
+        ).bind(blocusId, day, periodName, user.username).run();
+      }
+
+      const { results: rowsAfterSave } = await env.DB.prepare(
+        `SELECT period, course_id, section_id, is_exam, exam_note, exam_start_time, exam_end_time
+         FROM blocus_slots
+         WHERE blocus_id = ? AND day = ? AND username = ?`
+      ).bind(blocusId, day, user.username).all();
+      const slots = {
+        morning: { period: 'morning', courseId: '', sectionId: '', isExam: 0, examNote: '', examStartTime: '', examEndTime: '' },
+        afternoon: { period: 'afternoon', courseId: '', sectionId: '', isExam: 0, examNote: '', examStartTime: '', examEndTime: '' }
+      };
+      rowsAfterSave.forEach(row => {
+        if (!slots[row.period]) return;
+        slots[row.period] = {
+          period: row.period,
+          courseId: row.course_id || '',
+          sectionId: row.section_id || '',
+          isExam: Number(row.is_exam) === 1 ? 1 : 0,
+          examNote: row.exam_note || '',
+          examStartTime: row.exam_start_time || '',
+          examEndTime: row.exam_end_time || ''
+        };
+      });
+
+      return new Response(JSON.stringify({ day, slots, appliedPeriods: targetPeriods }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     if (path === '/api/blocus/course/create' && method === 'POST') {
@@ -386,9 +506,9 @@ function normalizeRole(r) {
 }
 function isOwner(u) { return normalizeRole(u?.role) === 'owner'; }
 const ROLE_META = {
-  owner: { label: 'Owner', color: '#f43f5e', bg: 'rgba(244,63,94,0.15)', border: 'rgba(244,63,94,0.3)', icon: '🔑' },
-  member: { label: 'Member', color: '#A855F7', bg: 'rgba(168,85,247,0.15)', border: 'rgba(168,85,247,0.3)', icon: '📁' },
-  viewer: { label: 'Viewer', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.2)', icon: '👁' }
+  owner: { label: 'Owner', color: '#2576eb', bg: 'rgba(37,118,235,0.10)', border: 'rgba(37,118,235,0.25)', icon: '🔑' },
+  member: { label: 'Member', color: '#44474b', bg: '#f2f5f7', border: '#dfe3e8', icon: '📁' },
+  viewer: { label: 'Viewer', color: '#838b96', bg: '#f2f5f7', border: '#dfe3e8', icon: '👁' }
 };
 const ROLE_PERMS = {
   owner: ['Upload any file type', 'Delete any file', 'Share files', 'Manage users & roles', 'Access admin panel'],
@@ -399,185 +519,187 @@ const ROLE_PERMS = {
 // Helper: Get base path prefix
 const BASE_PATH = (path) => path.startsWith('/todo') ? '/todo' : '';
 const BLOCUS_PASTELS = ['#B86BFF', '#D86EFF', '#F86BC7', '#9A7CFF', '#7FA2FF', '#68D2FF', '#6CEFE5', '#C58FFF'];
-const BLOCUS_EXAM_OUTLINE = '#EC4899';
+const BLOCUS_EXAM_OUTLINE = '#dc2626';
 
 // CSS - Simple Dark Theme (like Habit Tracker)
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap');
 :root{
-  --bg:#0F1115;--surface:#1A1D24;--surface-hover:#20242C;--surface-soft:#151820;
-  --text:#F1F5F9;--text-secondary:#94A3B8;--text-muted:#64748B;--border:#262A33;
-  --accent:#A855F7;--accent-pink:#EC4899;
-  --accent-soft:rgba(168,85,247,0.10);--accent-glow:rgba(168,85,247,0.20);
-  --danger:#F43F5E;--danger-soft:rgba(244,63,94,0.12);
-  --good:#10B981;--good-soft:rgba(16,185,129,0.12);
-  --warn:#F59E0B;
-  --radius-sm:6px;--radius:8px;--radius-md:10px;--radius-lg:12px;--radius-xl:16px;
+  --bg:#ffffff;--surface:#f2f5f7;--surface-hover:#e8edf1;--surface-soft:#f7f9fb;
+  --text:#303336;--text-secondary:#44474b;--text-muted:#838b96;--border:#dfe3e8;
+  --accent:#2576eb;--accent-pink:#5c9cf5;
+  --accent-soft:rgba(37,118,235,0.08);--accent-glow:rgba(37,118,235,0.18);
+  --action:#4f91fb;
+  --danger:#dc2626;--danger-soft:rgba(220,38,38,0.08);
+  --good:#16a34a;--good-soft:rgba(22,163,74,0.10);
+  --warn:#b45309;
+  --radius-sm:3px;--radius:6px;--radius-md:6px;--radius-lg:18px;--radius-xl:18px;
   --transition:150ms ease-out;
-  --shadow-sm:0 1px 3px rgba(0,0,0,0.25);--shadow:0 4px 16px rgba(0,0,0,0.30);--shadow-lg:0 16px 48px rgba(0,0,0,0.40);
-  --gradient:linear-gradient(135deg,#A855F7,#EC4899);
-  --gradient-subtle:linear-gradient(135deg,rgba(168,85,247,0.15),rgba(236,72,153,0.10));
-  --font:"DM Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
-  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow-sm:rgba(0,0,0,0.1) 0px 2px 8px 0px, rgba(0,0,0,0.1) 0px 0px 2px 0px;
+  --shadow:rgba(0,0,0,0.1) 0px 2px 8px 0px, rgba(0,0,0,0.1) 0px 0px 2px 0px;
+  --shadow-lg:rgba(0,0,0,0.1) 0px 2px 8px 0px, rgba(0,0,0,0.1) 0px 0px 2px 0px;
+  --gradient:#4f91fb;
+  --gradient-subtle:rgba(37,118,235,0.06);
+  --font:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   /* legacy aliases used by inline styles */
   --card:var(--surface);--txt-main:var(--text);--txt-muted:var(--text-secondary);
   --p:var(--accent);--err:var(--danger);
 }
 *,*::before,*::after{box-sizing:border-box}
-body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;font-size:14px;-webkit-font-smoothing:antialiased}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
 body > :not(header):not(script):not(.modal){max-width:1400px;margin-left:auto;margin-right:auto;padding-left:20px;padding-right:20px}
-h1,h2,h3,h4{letter-spacing:-0.01em;font-weight:700;margin:0}
-::selection{background:rgba(168,85,247,0.30)}
+h1,h2,h3,h4{letter-spacing:-0.01em;font-weight:700;margin:0;color:var(--text)}
+::selection{background:var(--accent-glow)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 input,textarea,select,button{font:inherit;color:inherit}
-input,textarea,select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:var(--radius);margin:4px 0;transition:all var(--transition);font-size:0.9em}
+input,textarea,select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:var(--radius);margin:4px 0;transition:all var(--transition);font-size:0.95em}
 input::placeholder,textarea::placeholder{color:var(--text-muted)}
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 3px var(--accent-glow)}
-button{cursor:pointer;background:var(--gradient);color:#fff;font-weight:600;border:none;padding:9px 16px;border-radius:var(--radius);transition:all var(--transition);font-size:0.9em;box-shadow:0 2px 8px rgba(168,85,247,0.30)}
-button:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(168,85,247,0.40)}
-button:active{transform:translateY(0)}
-.card{background:var(--surface);padding:22px;border-radius:var(--radius-lg);margin-bottom:20px;border:1px solid var(--border);box-shadow:var(--shadow-sm)}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);background:var(--bg);box-shadow:0 0 0 3px var(--accent-glow)}
+button{cursor:pointer;background:var(--action);color:#fff;font-weight:600;border:none;padding:7px 17px;border-radius:var(--radius);transition:background var(--transition),color var(--transition),border-color var(--transition);font-size:0.95em;box-shadow:none}
+button:hover{background:var(--accent-pink)}
+button:active{background:var(--accent)}
+.card{background:var(--surface);padding:18px;border-radius:var(--radius-lg);margin-bottom:20px;border:none;box-shadow:none}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
 a{color:var(--accent);text-decoration:none;transition:color var(--transition)}
 a:hover{color:var(--accent-pink)}
-header{display:flex;justify-content:space-between;align-items:center;height:64px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px;margin-bottom:20px}
-header strong{font-size:1.05em;letter-spacing:-0.02em}
+header{display:flex;justify-content:space-between;align-items:center;height:64px;padding:0 24px;background:var(--bg);border-bottom:1px solid var(--border);box-shadow:none;position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px;margin-bottom:20px}
+header strong{font-size:1.05em;letter-spacing:-0.02em;color:var(--text)}
 .user-wrap{position:relative}
-.user-btn{display:flex;align-items:center;gap:8px;color:var(--text);font-size:0.84rem;font-weight:500;padding:6px 12px 6px 10px;border-radius:var(--radius);background:transparent;border:1px solid var(--border);cursor:pointer;transition:all var(--transition);white-space:nowrap;box-shadow:none}
-.user-btn:hover{background:var(--surface-hover);transform:none;box-shadow:none}
+.user-btn{display:flex;align-items:center;gap:8px;color:var(--text);font-size:0.9rem;font-weight:600;padding:6px 12px 6px 10px;border-radius:var(--radius);background:transparent;border:1px solid var(--border);cursor:pointer;transition:all var(--transition);white-space:nowrap;box-shadow:none}
+.user-btn:hover{background:var(--surface);transform:none;box-shadow:none}
 .user-btn .caret{transition:transform var(--transition);margin-left:2px;color:var(--text-muted)}
 .user-wrap.open .user-btn .caret{transform:rotate(180deg)}
-.dd{display:none;position:absolute;right:0;top:calc(100% + 8px);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:240px;box-shadow:var(--shadow-lg);z-index:999;overflow:hidden}
+.dd{display:none;position:absolute;right:0;top:calc(100% + 8px);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:240px;box-shadow:var(--shadow-sm);z-index:999;overflow:hidden}
 .user-wrap.open .dd{display:block;animation:dd 150ms ease-out}
 @keyframes dd{from{opacity:0;transform:translateY(-4px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .dd-hdr{padding:14px 16px 12px;border-bottom:1px solid var(--border)}
-.dd-name{font-weight:700;font-size:0.92rem;margin-bottom:7px}
-.role-badge{display:inline-flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.04em;margin-bottom:9px;text-transform:uppercase}
-.perm-list{list-style:none}
-.perm-list li{font-size:0.76rem;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px}
+.dd-name{font-weight:700;font-size:0.95rem;margin-bottom:7px;color:var(--text)}
+.role-badge{display:inline-flex;align-items:center;gap:5px;font-size:0.7rem;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.04em;margin-bottom:9px;text-transform:uppercase;background:var(--accent-soft);color:var(--accent)}
+.perm-list{list-style:none;padding:0;margin:0}
+.perm-list li{font-size:0.8rem;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px}
 .perm-list li.ok{color:var(--text)}
 .pcheck{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;font-weight:700}
 .pcheck.y{background:var(--good-soft);color:var(--good)}
-.pcheck.n{background:var(--surface-soft);color:var(--text-muted)}
-.ddl{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--text);text-decoration:none;font-size:0.86rem;font-weight:500;transition:background var(--transition)}
-.ddl:hover{background:var(--accent-soft);color:var(--text)}
+.pcheck.n{background:var(--surface);color:var(--text-muted)}
+.ddl{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--text);text-decoration:none;font-size:0.9rem;font-weight:500;transition:background var(--transition)}
+.ddl:hover{background:var(--surface);color:var(--accent)}
 .dd-sep{height:1px;background:var(--border);margin:4px 0}
 .ddl.out{color:var(--danger)!important}
 .ddl.out:hover{background:var(--danger-soft)!important;color:var(--danger)}
-.nav-link{padding:7px 14px;border-radius:999px;background:var(--surface-soft);border:1px solid var(--border);color:var(--text-secondary);font-weight:600;font-size:0.82rem;transition:all var(--transition);display:inline-flex;align-items:center;gap:6px}
-.nav-link:hover{background:var(--surface-hover);color:var(--text)}
-.nav-link.active{background:var(--gradient);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(168,85,247,0.35)}
+.nav-link{padding:7px 14px;border-radius:var(--radius);background:transparent;border:none;color:var(--text-muted);font-weight:600;font-size:0.9rem;line-height:1.3;transition:color var(--transition);display:inline-flex;align-items:center;gap:6px}
+.nav-link:hover{color:var(--accent)}
+.nav-link.active{color:var(--accent);background:transparent;border-color:transparent;box-shadow:none}
 .board-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin-top:20px}
-.board-item{background:var(--surface);padding:22px;border-radius:var(--radius-lg);border:1px solid var(--border);cursor:pointer;transition:all var(--transition);box-shadow:var(--shadow-sm);position:relative;overflow:hidden}
-.board-item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gradient);opacity:0;transition:opacity var(--transition)}
-.board-item:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 12px 28px rgba(0,0,0,0.35), 0 0 0 1px rgba(168,85,247,0.3) inset;background:var(--surface-hover)}
-.board-item:hover::before{opacity:1}
-.board-item h3{margin-bottom:10px;font-size:1.05rem;font-weight:700;letter-spacing:-0.01em}
-.board-item .meta{color:var(--text-muted);font-size:0.8rem;margin-bottom:16px;font-family:var(--font-mono)}
-.board-item button{background:transparent;border:1px solid var(--border);color:var(--text-secondary);box-shadow:none;padding:6px 12px;font-size:0.82rem}
-.board-item button:hover{background:var(--danger-soft);color:var(--danger);border-color:rgba(244,63,94,0.35);transform:none;box-shadow:none}
+.board-item{background:var(--surface);padding:18px;border-radius:var(--radius-lg);border:none;cursor:pointer;transition:background var(--transition);box-shadow:none;position:relative;overflow:hidden}
+.board-item::before{content:none}
+.board-item:hover{background:var(--surface-hover);transform:none;box-shadow:var(--shadow-sm)}
+.board-item h3{margin-bottom:10px;font-size:1.1rem;font-weight:700;letter-spacing:-0.01em}
+.board-item .meta{color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;font-family:var(--font)}
+.board-item button{background:transparent;border:1px solid var(--border);color:var(--text-secondary);box-shadow:none;padding:6px 12px;font-size:0.85rem}
+.board-item button:hover{background:var(--bg);color:var(--danger);border-color:var(--danger);box-shadow:none}
 .kanban{display:flex;gap:16px;overflow-x:auto;padding:6px 4px 20px;min-height:70vh}
 .kanban::-webkit-scrollbar{height:8px}
 .kanban::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px}
-.list{min-width:300px;max-width:300px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;max-height:calc(100vh - 180px);transition:transform var(--transition),opacity var(--transition);box-shadow:var(--shadow-sm)}
+.list{min-width:300px;max-width:300px;background:var(--surface);border:none;border-radius:var(--radius-lg);display:flex;flex-direction:column;max-height:calc(100vh - 180px);transition:transform var(--transition),opacity var(--transition);box-shadow:none}
 .list.dragging{opacity:0.4;transform:scale(0.97)}
 .list.placeholder{background:var(--accent-soft);border:2px dashed var(--accent);opacity:0.7;min-height:200px;border-radius:var(--radius-lg)}
-.list-header{background:var(--surface-soft);padding:12px 14px;border-radius:var(--radius-lg) var(--radius-lg) 0 0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);user-select:none;gap:8px}
-.list-header input{background:transparent;border:none;color:var(--text);font-weight:700;font-size:0.92rem;padding:3px 6px;margin:0;flex:1;box-shadow:none;letter-spacing:-0.01em}
+.list-header{background:transparent;padding:14px 16px 10px;border-radius:var(--radius-lg) var(--radius-lg) 0 0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);user-select:none;gap:8px}
+.list-header input{background:transparent;border:none;color:var(--text);font-weight:700;font-size:0.95rem;padding:3px 6px;margin:0;flex:1;box-shadow:none;letter-spacing:-0.01em}
 .list-header input:focus{background:var(--bg);border-radius:var(--radius-sm);box-shadow:0 0 0 2px var(--accent-glow)}
-.list-header .count{background:var(--accent-soft);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:0.7rem;font-weight:700;font-family:var(--font-mono)}
+.list-header .count{background:var(--accent-soft);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:0.72rem;font-weight:700;font-family:var(--font)}
 .list-header button{background:transparent;color:var(--text-muted);border:none;padding:5px 7px;font-size:0.9em;cursor:pointer;border-radius:var(--radius-sm);box-shadow:none}
 .list-header button:hover{color:var(--danger);background:var(--danger-soft);transform:none;box-shadow:none}
 .cards{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
 .cards::-webkit-scrollbar{width:4px}
 .cards::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px}
-.task-card{background:var(--surface-soft);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;cursor:grab;position:relative;transition:all var(--transition);box-shadow:var(--shadow-sm)}
-.task-card:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,0.3), 0 0 0 1px rgba(168,85,247,0.2) inset;transform:translateY(-1px)}
+.task-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;cursor:grab;position:relative;transition:box-shadow var(--transition),border-color var(--transition);box-shadow:none}
+.task-card:hover{border-color:var(--accent);box-shadow:var(--shadow-sm);transform:none}
 .task-card:hover .card-actions{opacity:1}
 .task-card:active{cursor:grabbing;transform:scale(0.98)}
 .task-card.dragging{opacity:0.4;transform:scale(0.95);box-shadow:none}
-.card-title{font-weight:600;margin-bottom:4px;line-height:1.4;color:var(--text);font-size:0.92rem}
-.card-desc{color:var(--text-secondary);font-size:0.82rem;margin-top:6px;line-height:1.5}
+.card-title{font-weight:600;margin-bottom:4px;line-height:1.4;color:var(--text);font-size:0.95rem}
+.card-desc{color:var(--text-secondary);font-size:0.85rem;margin-top:6px;line-height:1.5}
 .card-actions{opacity:0;display:flex;gap:6px;margin-top:10px;transition:opacity var(--transition);pointer-events:auto;border-top:1px solid var(--border);padding-top:10px}
 .task-card:hover .card-actions,.card-actions:hover,.card-actions:focus-within{opacity:1!important}
-.card-actions button{background:transparent;color:var(--text-muted);border:1px solid var(--border);padding:5px 10px;border-radius:var(--radius-sm);font-size:0.76rem;cursor:pointer;pointer-events:all;box-shadow:none;font-weight:500;flex:1}
-.card-actions button:hover{background:var(--surface-hover);color:var(--text);transform:none;box-shadow:none}
-.card-actions button.del:hover{color:var(--danger);background:var(--danger-soft);border-color:rgba(244,63,94,0.3)}
-.add-card{padding:10px;margin:10px;background:transparent;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);text-align:center;cursor:pointer;font-size:0.84rem;font-weight:600;transition:all var(--transition)}
+.card-actions button{background:transparent;color:var(--text-muted);border:1px solid var(--border);padding:5px 10px;border-radius:var(--radius-sm);font-size:0.78rem;cursor:pointer;pointer-events:all;box-shadow:none;font-weight:500;flex:1}
+.card-actions button:hover{background:var(--surface);color:var(--text);transform:none;box-shadow:none}
+.card-actions button.del:hover{color:var(--danger);background:var(--danger-soft);border-color:var(--danger)}
+.add-card{padding:10px;margin:10px;background:transparent;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);text-align:center;cursor:pointer;font-size:0.85rem;font-weight:600;transition:all var(--transition)}
 .add-card:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
-.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,17,21,0.75);backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center}
+.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(48,51,54,0.40);backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center}
 .modal.active{display:flex;animation:fadeIn 0.2s ease-out}
 @keyframes fadeIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
-.modal-content{background:var(--surface);padding:28px;border-radius:var(--radius-xl);border:1px solid var(--border);max-width:500px;width:90%;box-shadow:var(--shadow-lg)}
-.modal-content h3{margin-bottom:20px;font-size:1.1rem;font-weight:700;letter-spacing:-0.01em}
+.modal-content{background:var(--bg);padding:28px;border-radius:var(--radius-xl);border:1px solid var(--border);max-width:500px;width:90%;box-shadow:var(--shadow-sm)}
+.modal-content h3{margin-bottom:20px;font-size:1.15rem;font-weight:700;letter-spacing:-0.01em}
 .form-group{margin-bottom:16px}
-.form-group label{display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.82rem;font-weight:600;letter-spacing:0.02em}
+.form-group label{display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;font-weight:600;letter-spacing:0.02em}
 .form-group input,.form-group textarea,.form-group select{width:100%}
 .btn-group{display:flex;gap:10px;margin-top:24px}
 .btn-group button{flex:1}
 .btn-danger{background:transparent;border:1px solid var(--border);color:var(--text);box-shadow:none}
-.btn-danger:hover{background:var(--danger-soft);color:var(--danger);border-color:rgba(244,63,94,0.35);transform:none;box-shadow:none}
-.section-title{font-size:1rem;font-weight:700;margin:18px 0 8px}
+.btn-danger:hover{background:var(--danger-soft);color:var(--danger);border-color:var(--danger);transform:none;box-shadow:none}
+.section-title{font-size:1.05rem;font-weight:700;margin:18px 0 8px;color:var(--text)}
 .input-row{display:flex;gap:8px;align-items:flex-end}
 .input-row>*{flex:1}
 .small-btn{padding:8px 12px;white-space:nowrap}
-.course-builder-list{display:flex;flex-direction:column;gap:8px;max-height:180px;overflow:auto;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-soft)}
-.course-builder-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface)}
+.course-builder-list{display:flex;flex-direction:column;gap:8px;max-height:180px;overflow:auto;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg)}
+.course-builder-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg)}
 .course-color-dot{width:12px;height:12px;border-radius:999px;display:inline-block;flex-shrink:0}
 .chip-list{display:flex;flex-wrap:wrap;gap:6px}
-.chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:0.74rem;border:1px solid var(--border);background:var(--surface-soft);color:var(--text-secondary)}
+.chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:0.78rem;border:1px solid var(--border);background:var(--bg);color:var(--text-secondary)}
 .hidden{display:none!important}
 .mode-toggle{display:flex;gap:8px;margin-bottom:14px}
 .mode-btn{background:transparent;border:1px solid var(--border);color:var(--text-secondary);box-shadow:none;padding:8px 12px}
-.mode-btn:hover{transform:none;background:var(--surface-hover);color:var(--text)}
-.mode-btn.active{background:var(--gradient);color:#fff;border-color:transparent}
-.calendar-meta{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;color:var(--text-secondary);font-size:0.82rem}
+.mode-btn:hover{transform:none;background:var(--surface);color:var(--text)}
+.mode-btn.active{background:var(--action);color:#fff;border-color:transparent}
+.calendar-meta{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;color:var(--text-secondary);font-size:0.85rem}
 .calendar-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .calendar-legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
-.calendar-legend-item{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface-soft)}
-.calendar-legend-item .name{font-size:0.8rem;font-weight:600}
+.calendar-legend-item{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--bg)}
+.calendar-legend-item .name{font-size:0.85rem;font-weight:600;color:var(--text)}
 .calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:12px}
 .calendar-empty{border:1px dashed transparent;min-height:210px}
-.calendar-day{min-height:210px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden}
-.calendar-day-head{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--surface-soft);font-size:0.76rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.03em}
+.calendar-day{min-height:210px;background:var(--surface);border:none;border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden}
+.calendar-day-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);background:transparent;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:700}
 .calendar-day-head .day-num{font-size:1rem;font-weight:700;color:var(--text)}
-.calendar-slot{flex:1;display:flex;flex-direction:column;gap:6px;padding:8px;border-top:1px solid var(--border);background:var(--surface-soft);transition:background var(--transition),border-color var(--transition);--slot-label-color:rgba(226,232,240,0.78);--slot-main-color:#F8FAFC;--slot-empty-color:rgba(226,232,240,0.62);--slot-badge-bg:rgba(236,72,153,0.18);--slot-badge-border:rgba(236,72,153,0.45);--slot-badge-color:#FFE4F3;--slot-note-color:rgba(241,245,249,0.84);--slot-countdown-color:#F1F5F9;--slot-divider-color:rgba(15,17,21,0.22)}
+.calendar-slot{flex:1;display:flex;flex-direction:column;gap:6px;padding:10px;border-top:1px solid var(--border);background:transparent;transition:background var(--transition),border-color var(--transition);--slot-label-color:var(--text-muted);--slot-main-color:var(--text);--slot-empty-color:var(--text-muted);--slot-badge-bg:var(--accent-soft);--slot-badge-border:transparent;--slot-badge-color:var(--accent);--slot-note-color:var(--text-secondary);--slot-countdown-color:var(--text);--slot-divider-color:var(--border)}
 .calendar-slot:first-of-type{border-top:none}
 .calendar-slot.selectable{cursor:pointer}
-.calendar-slot.selected{box-shadow:inset 0 0 0 2px rgba(168,85,247,0.95);border-color:rgba(168,85,247,0.95)!important}
+.calendar-slot.selected{box-shadow:inset 0 0 0 2px var(--accent);border-color:var(--accent)!important}
 .calendar-slot-label-row{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.calendar-slot-label{font-size:0.68rem;color:var(--slot-label-color);font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
-.calendar-slot select,.calendar-slot input{margin:0;padding:6px 8px;font-size:0.76rem}
+.calendar-slot-label-main{display:flex;align-items:center;gap:8px;min-width:0}
+.calendar-slot-label{font-size:0.7rem;color:var(--slot-label-color);font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
+.calendar-slot-label-time{font-size:0.7rem;font-weight:700;line-height:1.2;color:var(--slot-note-color);white-space:nowrap}
+.calendar-slot select,.calendar-slot input{margin:0;padding:6px 8px;font-size:0.8rem}
 .calendar-slot input{min-width:0}
-.slot-selector{display:none;background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:2px 8px;font-size:0.67rem;line-height:1.2;border-radius:999px;box-shadow:none}
-.slot-selector:hover{transform:none;box-shadow:none;background:var(--surface-hover);color:var(--text)}
+.slot-selector{display:none;background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:2px 8px;font-size:0.7rem;line-height:1.2;border-radius:999px;box-shadow:none}
+.slot-selector:hover{transform:none;box-shadow:none;background:var(--surface);color:var(--text)}
 .calendar-slot.selected .slot-selector{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .slot-view,.slot-edit{display:flex;flex-direction:column;gap:6px;flex:1}
 .slot-view{justify-content:flex-start}
-.slot-view-main{font-size:0.82rem;font-weight:700;line-height:1.35;color:var(--slot-main-color)}
+.slot-view-main{font-size:0.88rem;font-weight:700;line-height:1.35;color:var(--slot-main-color)}
 .slot-view-empty{color:var(--slot-empty-color);font-weight:500}
-.slot-view-badge{display:inline-flex;align-items:center;width:fit-content;font-size:0.72rem;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--slot-badge-bg);border:1px solid var(--slot-badge-border);color:var(--slot-badge-color)}
-.slot-view-time{font-size:0.72rem;font-weight:700;line-height:1.25;color:var(--slot-note-color)}
-.slot-view-note{font-size:0.74rem;line-height:1.35;color:var(--slot-note-color)}
-.slot-countdown{margin-top:auto;padding-top:6px;border-top:1px solid var(--slot-divider-color);font-size:0.72rem;font-weight:700;color:var(--slot-countdown-color)}
+.slot-view-badge{display:inline-flex;align-items:center;width:fit-content;font-size:0.74rem;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--slot-badge-bg);border:1px solid var(--slot-badge-border);color:var(--slot-badge-color)}
+.slot-view-note{font-size:0.78rem;line-height:1.4;color:var(--slot-note-color)}
+.slot-countdown{margin-top:auto;padding-top:6px;border-top:1px solid var(--slot-divider-color);font-size:0.74rem;font-weight:700;color:var(--slot-countdown-color)}
 .exam-time-row{display:flex;flex-direction:column;gap:6px}
 .time-select-wrap{display:flex;flex-direction:column;gap:4px}
-.time-select-label{font-size:0.64rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--slot-label-color)}
+.time-select-label{font-size:0.66rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--slot-label-color)}
 .time-select{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:4px;align-items:center}
-.time-select select{margin:0;padding:6px 8px;font-family:var(--font-mono);letter-spacing:0.02em;min-width:0;width:100%}
-.time-colon{font-family:var(--font-mono);font-weight:700;color:var(--slot-note-color);font-size:0.9rem}
+.time-select select{margin:0;padding:6px 8px;letter-spacing:0.02em;min-width:0;width:100%}
+.time-colon{font-weight:700;color:var(--slot-note-color);font-size:0.95rem}
 .course-editor{margin-bottom:18px}
 .course-editor-toggle{width:100%;display:flex;align-items:center;justify-content:flex-start;gap:8px;padding:0;border:none;background:transparent;color:var(--text);box-shadow:none}
-.course-editor-toggle:hover{transform:none;box-shadow:none}
+.course-editor-toggle:hover{transform:none;box-shadow:none;background:transparent;color:var(--accent)}
 .course-editor-chevron{display:inline-flex;align-items:center;justify-content:center;width:16px;line-height:1;transition:transform var(--transition)}
 .course-editor-toggle[aria-expanded="true"] .course-editor-chevron{transform:rotate(90deg)}
-.course-editor-toggle .helper{color:var(--text-secondary);font-size:0.78rem}
+.course-editor-toggle .helper{color:var(--text-muted);font-size:0.82rem;font-weight:500}
 .course-editor-body{margin-top:12px}
 .course-edit-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
-.course-edit-row{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(190px,1.3fr) minmax(220px,1.8fr) auto auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-soft)}
+.course-edit-row{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(190px,1.3fr) minmax(220px,1.8fr) auto auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg)}
 .course-color-wrap{display:flex;flex-direction:column;gap:6px;min-width:0}
 .preset-colors{display:flex;flex-wrap:wrap;gap:6px}
-.preset-color-btn{width:20px;height:20px;min-width:20px;padding:0;border-radius:999px;border:1px solid rgba(15,17,21,0.28);box-shadow:none;transform:none}
+.preset-color-btn{width:20px;height:20px;min-width:20px;padding:0;border-radius:999px;border:1px solid var(--border);box-shadow:none;transform:none}
 .preset-color-btn:hover{transform:none;box-shadow:none}
 .preset-color-btn.active{outline:2px solid var(--accent);outline-offset:1px}
 .course-edit-row .course-edit-color{padding:3px;height:32px;min-width:0}
@@ -586,7 +708,7 @@ header strong{font-size:1.05em;letter-spacing:-0.02em}
 .past-days h3{margin:0}
 .empty-calendar{padding:18px;text-align:center;color:var(--text-muted)}
 .batch-panel{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.batch-panel .batch-count{font-size:0.76rem;color:var(--text-secondary);padding:4px 8px;border:1px solid var(--border);border-radius:999px}
+.batch-panel .batch-count{font-size:0.8rem;color:var(--text-secondary);padding:4px 8px;border:1px solid var(--border);border-radius:999px;background:var(--bg)}
 .batch-panel select{max-width:290px;min-width:220px}
 body[data-blocus-mode="view"] .slot-edit{display:none}
 body[data-blocus-mode="edit"] .slot-view{display:none}
@@ -599,14 +721,14 @@ body[data-blocus-mode="edit"] .calendar-slot.selectable .slot-selector{display:i
 @media (max-width:560px){.calendar-grid{grid-template-columns:1fr}}
 `;
 
-const FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23A855F7'/%3E%3Cstop offset='1' stop-color='%23EC4899'/%3E%3C/LinearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ctext x='16' y='21' font-family='Arial,sans-serif' font-weight='900' font-size='12' fill='white' text-anchor='middle'%3E111%3C/text%3E%3C/svg%3E`;
+const FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234f91fb'/%3E%3Ctext x='16' y='21' font-family='Arial,sans-serif' font-weight='900' font-size='12' fill='white' text-anchor='middle'%3E111%3C/text%3E%3C/svg%3E`;
 
 function renderBrand(appName = 'Todo List') {
   return `<a href="/" style="text-decoration:none;display:flex;align-items:center;gap:10px;flex-shrink:0">
-    <span style="width:36px;height:36px;background:linear-gradient(135deg,#A855F7,#EC4899);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.05em;color:#fff;text-shadow:0 0 12px rgba(255,255,255,0.7),0 0 4px rgba(255,255,255,0.95);flex-shrink:0;box-shadow:0 2px 8px rgba(168,85,247,0.35),0 0 20px rgba(168,85,247,0.45)">111</span>
+    <span style="width:36px;height:36px;background:#4f91fb;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.05em;color:#fff;flex-shrink:0">111</span>
     <div style="display:flex;flex-direction:column;line-height:1.25">
-      <span style="font-weight:700;font-size:1.1em;color:#fff;letter-spacing:-0.02em">111<span style="color:#A855F7;text-shadow:0 0 20px rgba(168,85,247,0.5)">iridescence</span></span>
-      <span style="font-size:0.72em;color:#94a3b8;font-weight:500;letter-spacing:0.03em">Hub</span>
+      <span style="font-weight:700;font-size:1.1em;color:#303336;letter-spacing:-0.02em">111<span style="color:#2576eb">iridescence</span></span>
+      <span style="font-size:0.72em;color:#838b96;font-weight:500;letter-spacing:0.03em">Hub</span>
     </div>
   </a>`;
 }
@@ -714,7 +836,7 @@ function renderDash(user, boards, blocusBoards = [], basePath = '') {
 
   <h2 class="section-title">Kanban Boards</h2>
   <div class="board-grid">
-    ${boards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#777">No boards yet. Create your first board!</div>' : ''}
+    ${boards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#838b96">No boards yet. Create your first board!</div>' : ''}
     ${boards.map(b => `
         <div class="board-item" onclick="location.href='${basePath}/board/${b.id}'">
           <h3>${escapeHtml(b.name)}</h3>
@@ -726,7 +848,7 @@ function renderDash(user, boards, blocusBoards = [], basePath = '') {
 
   <h2 class="section-title" style="margin-top:28px">Blocus Calendars</h2>
   <div class="board-grid">
-    ${blocusBoards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#777">No blocus calendar yet. Create one to plan your revision period.</div>' : ''}
+    ${blocusBoards.length === 0 ? '<div class="card" style="grid-column:1/-1;text-align:center;color:#838b96">No blocus calendar yet. Create one to plan your revision period.</div>' : ''}
     ${blocusBoards.map(b => `
         <div class="board-item" onclick="location.href='${basePath}/blocus/${b.id}'">
           <h3>${escapeHtml(b.name)}</h3>
@@ -793,7 +915,7 @@ function renderDash(user, boards, blocusBoards = [], basePath = '') {
   <div id="confirmModal" class="modal">
     <div class="modal-content" style="max-width:400px">
       <h3>⚠ Confirm Deletion</h3>
-      <p id="confirmMessage" style="color:#aaa;margin:20px 0"></p>
+      <p id="confirmMessage" style="color:#44474b;margin:20px 0"></p>
       <div class="btn-group">
         <button id="confirmYes" class="btn-danger">Delete</button>
         <button id="confirmNo" onclick="hideConfirm()">Cancel</button>
@@ -1047,7 +1169,38 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
     return '';
   };
 
-  const renderSlot = (dayIso, period, label) => {
+  const parseTimeToMinutes = (time) => {
+    if (!time) return null;
+    const [hhRaw, mmRaw] = String(time).split(':');
+    const hh = Number(hhRaw);
+    const mm = Number(mmRaw);
+    if (!Number.isInteger(hh) || !Number.isInteger(mm)) return null;
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+    return (hh * 60) + mm;
+  };
+
+  const shouldMergeAllDaySlot = (dayIso) => {
+    const morning = slotByKey[`${dayIso}|morning`];
+    const afternoon = slotByKey[`${dayIso}|afternoon`];
+    if (!morning || !afternoon) return false;
+    if (Number(morning.is_exam) !== 1 || Number(afternoon.is_exam) !== 1) return false;
+    if ((morning.course_id || '') !== (afternoon.course_id || '')) return false;
+    if ((morning.section_id || '') !== (afternoon.section_id || '')) return false;
+    if ((morning.exam_note || '') !== (afternoon.exam_note || '')) return false;
+    const morningStart = normalizeExamTime(morning.exam_start_time || '') || '';
+    const morningEnd = normalizeExamTime(morning.exam_end_time || '') || '';
+    const afternoonStart = normalizeExamTime(afternoon.exam_start_time || '') || '';
+    const afternoonEnd = normalizeExamTime(afternoon.exam_end_time || '') || '';
+    if (!morningStart || !morningEnd || !afternoonStart || !afternoonEnd) return false;
+    if (morningStart !== afternoonStart || morningEnd !== afternoonEnd) return false;
+    const startMinutes = parseTimeToMinutes(morningStart);
+    const endMinutes = parseTimeToMinutes(morningEnd);
+    if (startMinutes === null || endMinutes === null) return false;
+    const noon = 12 * 60;
+    return startMinutes < noon && endMinutes > noon;
+  };
+
+  const renderSlot = (dayIso, period, label, { allDay = false } = {}) => {
     const slot = slotByKey[`${dayIso}|${period}`];
     const isExam = slot ? Number(slot.is_exam) === 1 : false;
     const targetValue = slot ? (slot.section_id ? `section:${slot.section_id}` : slot.course_id ? `course:${slot.course_id}` : '') : '';
@@ -1065,41 +1218,42 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
     const style = getSlotStyle(meta?.color, isExam);
     const countdown = isExam ? formatDaysLeft(dayDiffBetweenIso(todayIso, dayIso)) : '';
 
-    return `<div class="calendar-slot" data-day="${dayIso}" data-period="${period}" style="${style}">
+    return `<div class="calendar-slot${allDay ? ' calendar-slot-all-day' : ''}" data-day="${dayIso}" data-period="${period}" data-all-day="${allDay ? '1' : '0'}" style="${style}">
       <div class="calendar-slot-label-row">
-        <div class="calendar-slot-label">${label}</div>
+        <div class="calendar-slot-label-main">
+          <div class="calendar-slot-label">${label}</div>
+          <div class="calendar-slot-label-time ${isExam && examTimeLabel ? '' : 'hidden'}">${escapeHtml(examTimeLabel)}</div>
+        </div>
         <button type="button" class="slot-selector" onclick="toggleSlotSelectionByButton(this,event)">Select</button>
       </div>
       <div class="slot-view">
         <div class="slot-view-main ${meta ? '' : 'slot-view-empty'}">${escapeHtml(meta?.label || 'No course selected')}</div>
-        <div class="slot-view-badge ${isExam ? '' : 'hidden'}">Exam day</div>
-        <div class="slot-view-time ${isExam && examTimeLabel ? '' : 'hidden'}">${escapeHtml(examTimeLabel)}</div>
         <div class="slot-view-note ${isExam && examNote ? '' : 'hidden'}">${escapeHtml(examNote)}</div>
         <div class="slot-countdown ${isExam ? '' : 'hidden'}" data-exam-date="${dayIso}">${escapeHtml(countdown)}</div>
       </div>
       <div class="slot-edit">
-        <select class="slot-main" onchange="handleSlotChange(this)">
+        <select class="slot-main" onchange="handleSlotChange(this)" oninput="handleSlotChange(this)">
           ${renderSelectOptions(mainValue, true, '— Select course —')}
         </select>
         <div class="exam-extra ${isExam ? '' : 'hidden'}">
-          <select class="slot-exam-for" onchange="saveSlotFromInput(this)" onblur="saveSlotFromInput(this)">
+          <select class="slot-exam-for" onchange="saveSlotFromInput(this)" oninput="saveSlotFromInput(this)">
             ${renderSelectOptions(examForValue, false, '— Exam for (course/subsection) —')}
           </select>
           <div class="exam-time-row">
             <div class="time-select-wrap">
               <div class="time-select-label">Start</div>
               <div class="time-select">
-                <select class="slot-exam-start-hour" onchange="saveSlotFromInput(this)" onblur="saveSlotFromInput(this)">${renderTimeOptions(23, examStartHour, 'HH')}</select>
+                <select class="slot-exam-start-hour" onchange="saveSlotFromInput(this)" oninput="saveSlotFromInput(this)">${renderTimeOptions(23, examStartHour, 'HH')}</select>
                 <span class="time-colon">:</span>
-                <select class="slot-exam-start-minute" onchange="saveSlotFromInput(this)" onblur="saveSlotFromInput(this)">${renderTimeOptions(59, examStartMinute, 'MM', false)}</select>
+                <select class="slot-exam-start-minute" onchange="saveSlotFromInput(this)" oninput="saveSlotFromInput(this)">${renderTimeOptions(59, examStartMinute, 'MM', false)}</select>
               </div>
             </div>
             <div class="time-select-wrap">
               <div class="time-select-label">End</div>
               <div class="time-select">
-                <select class="slot-exam-end-hour" onchange="saveSlotFromInput(this)" onblur="saveSlotFromInput(this)">${renderTimeOptions(23, examEndHour, 'HH')}</select>
+                <select class="slot-exam-end-hour" onchange="saveSlotFromInput(this)" oninput="saveSlotFromInput(this)">${renderTimeOptions(23, examEndHour, 'HH')}</select>
                 <span class="time-colon">:</span>
-                <select class="slot-exam-end-minute" onchange="saveSlotFromInput(this)" onblur="saveSlotFromInput(this)">${renderTimeOptions(59, examEndMinute, 'MM', false)}</select>
+                <select class="slot-exam-end-minute" onchange="saveSlotFromInput(this)" oninput="saveSlotFromInput(this)">${renderTimeOptions(59, examEndMinute, 'MM', false)}</select>
               </div>
             </div>
           </div>
@@ -1109,16 +1263,21 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
     </div>`;
   };
 
-  const renderDayCard = (day) => `
+  const renderDayCard = (day) => {
+    const mergedAllDay = shouldMergeAllDaySlot(day.iso);
+    const slotsHtml = mergedAllDay
+      ? renderSlot(day.iso, 'afternoon', 'All day', { allDay: true })
+      : `${renderSlot(day.iso, 'morning', 'Morning')}${renderSlot(day.iso, 'afternoon', 'Afternoon')}`;
+    return `
     <div class="calendar-day">
       <div class="calendar-day-head">
         <span>${escapeHtml(day.weekday)}</span>
         <span class="day-num">${day.day}</span>
       </div>
-      ${renderSlot(day.iso, 'morning', 'Morning')}
-      ${renderSlot(day.iso, 'afternoon', 'Afternoon')}
+      ${slotsHtml}
     </div>
   `;
+  };
 
   const renderCalendarGrid = (days, withWeekOffset) => {
     if (days.length === 0) {
@@ -1241,8 +1400,11 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       const EXAM_OUTLINE = '${BLOCUS_EXAM_OUTLINE}';
       const selectedSlotKeys = new Set();
       let multiSelectEnabled = false;
+      let editAutosaveInterval = null;
       const courseEditorToggleBtn = document.getElementById('courseEditorToggleBtn');
       const courseEditorBody = document.getElementById('courseEditorBody');
+
+      function debugSave() {}
 
       function hexToRgb(hex) {
         const clean = (hex || '').replace('#', '');
@@ -1271,14 +1433,14 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       function normalizeExamTimeValue(raw) {
         const value = (raw || '').toString().trim();
         if (!value) return '';
-        const match24 = value.match(/^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$/);
+        const match24 = value.match(/^(\\d{1,2}):([0-5]\\d)(?::[0-5]\\d)?$/);
         if (match24) {
           const hh = Number(match24[1]);
           if (hh >= 0 && hh <= 23) return String(hh).padStart(2, '0') + ':' + match24[2];
           return null;
         }
 
-        const match12 = value.match(/^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?\s*([AaPp][Mm])$/);
+        const match12 = value.match(/^(\\d{1,2}):([0-5]\\d)(?::[0-5]\\d)?\\s*([AaPp][Mm])$/);
         if (match12) {
           let hh = Number(match12[1]);
           if (hh < 1 || hh > 12) return null;
@@ -1335,27 +1497,27 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
 
       function setSlotTextTheme(slotEl, lightBackground, isExam) {
         if (lightBackground) {
-          slotEl.style.setProperty('--slot-label-color', 'rgba(15,23,42,0.62)');
-          slotEl.style.setProperty('--slot-main-color', 'rgba(15,23,42,0.92)');
-          slotEl.style.setProperty('--slot-empty-color', 'rgba(15,23,42,0.5)');
-          slotEl.style.setProperty('--slot-note-color', 'rgba(15,23,42,0.78)');
-          slotEl.style.setProperty('--slot-countdown-color', 'rgba(15,23,42,0.84)');
-          slotEl.style.setProperty('--slot-divider-color', 'rgba(15,23,42,0.18)');
-          slotEl.style.setProperty('--slot-badge-bg', isExam ? 'rgba(236,72,153,0.2)' : 'rgba(15,23,42,0.1)');
-          slotEl.style.setProperty('--slot-badge-border', isExam ? 'rgba(190,24,93,0.48)' : 'rgba(15,23,42,0.24)');
-          slotEl.style.setProperty('--slot-badge-color', isExam ? 'rgba(131,24,67,0.92)' : 'rgba(15,23,42,0.86)');
+          slotEl.style.setProperty('--slot-label-color', 'rgba(48,51,54,0.6)');
+          slotEl.style.setProperty('--slot-main-color', '#303336');
+          slotEl.style.setProperty('--slot-empty-color', 'rgba(48,51,54,0.5)');
+          slotEl.style.setProperty('--slot-note-color', '#44474b');
+          slotEl.style.setProperty('--slot-countdown-color', '#303336');
+          slotEl.style.setProperty('--slot-divider-color', '#dfe3e8');
+          slotEl.style.setProperty('--slot-badge-bg', isExam ? 'rgba(220,38,38,0.10)' : 'rgba(37,118,235,0.10)');
+          slotEl.style.setProperty('--slot-badge-border', 'transparent');
+          slotEl.style.setProperty('--slot-badge-color', isExam ? '#dc2626' : '#2576eb');
           return;
         }
 
-        slotEl.style.setProperty('--slot-label-color', 'rgba(241,245,249,0.82)');
-        slotEl.style.setProperty('--slot-main-color', '#F8FAFC');
-        slotEl.style.setProperty('--slot-empty-color', 'rgba(226,232,240,0.62)');
-        slotEl.style.setProperty('--slot-note-color', 'rgba(241,245,249,0.88)');
-        slotEl.style.setProperty('--slot-countdown-color', '#F1F5F9');
-        slotEl.style.setProperty('--slot-divider-color', 'rgba(15,17,21,0.22)');
-        slotEl.style.setProperty('--slot-badge-bg', 'rgba(236,72,153,0.18)');
-        slotEl.style.setProperty('--slot-badge-border', 'rgba(236,72,153,0.45)');
-        slotEl.style.setProperty('--slot-badge-color', '#FFE4F3');
+        slotEl.style.setProperty('--slot-label-color', 'rgba(255,255,255,0.78)');
+        slotEl.style.setProperty('--slot-main-color', '#ffffff');
+        slotEl.style.setProperty('--slot-empty-color', 'rgba(255,255,255,0.62)');
+        slotEl.style.setProperty('--slot-note-color', 'rgba(255,255,255,0.88)');
+        slotEl.style.setProperty('--slot-countdown-color', '#ffffff');
+        slotEl.style.setProperty('--slot-divider-color', 'rgba(255,255,255,0.22)');
+        slotEl.style.setProperty('--slot-badge-bg', 'rgba(255,255,255,0.18)');
+        slotEl.style.setProperty('--slot-badge-border', 'rgba(255,255,255,0.32)');
+        slotEl.style.setProperty('--slot-badge-color', '#ffffff');
       }
 
       function applySlotTextThemeFromColor(slotEl, color, isExam) {
@@ -1461,6 +1623,73 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         return { isExam, target, note, start, end };
       }
 
+      function buildSlotSavePayload(slotEl) {
+        const { isExam, target, note, start, end } = getSlotState(slotEl);
+        const lastStart = slotEl.dataset.lastSavedExamStart || '';
+        const lastEnd = slotEl.dataset.lastSavedExamEnd || '';
+        let safeStart = start === null ? '' : (start || '');
+        let safeEnd = end === null ? '' : (end || '');
+        if (isExam) {
+          if (!safeStart && lastStart) safeStart = lastStart;
+          if (!safeEnd && lastEnd) safeEnd = lastEnd;
+        } else {
+          safeStart = '';
+          safeEnd = '';
+        }
+        const parsed = parseEntry(target);
+        return {
+          isExam,
+          note,
+          start: safeStart,
+          end: safeEnd,
+          courseId: parsed.courseId || '',
+          sectionId: parsed.sectionId || ''
+        };
+      }
+
+      function slotPayloadSignature(payload) {
+        return [
+          payload.isExam ? '1' : '0',
+          payload.courseId,
+          payload.sectionId,
+          payload.note,
+          payload.start,
+          payload.end
+        ].join('|');
+      }
+
+      function applyServerSlotSnapshot(day, slots) {
+        if (!day || !slots || typeof slots !== 'object') return;
+        ['morning', 'afternoon'].forEach(periodName => {
+          const slotEl = getSlotByKey(day + '|' + periodName);
+          if (!slotEl) return;
+          const state = slots[periodName] || {};
+          const isExam = Number(state.isExam) === 1;
+          const targetValue = state.sectionId
+            ? ('section:' + state.sectionId)
+            : state.courseId
+              ? ('course:' + state.courseId)
+              : '';
+          const mainInput = slotEl.querySelector('.slot-main');
+          const examForInput = slotEl.querySelector('.slot-exam-for');
+          const examNoteInput = slotEl.querySelector('.slot-exam-note');
+          const examExtra = slotEl.querySelector('.exam-extra');
+
+          if (mainInput) mainInput.value = isExam ? '__exam__' : targetValue;
+          if (examForInput) examForInput.value = isExam ? targetValue : '';
+          setExamTimeToSelectors(slotEl, 'start', isExam ? (state.examStartTime || '') : '');
+          setExamTimeToSelectors(slotEl, 'end', isExam ? (state.examEndTime || '') : '');
+          if (examNoteInput) examNoteInput.value = isExam ? (state.examNote || '') : '';
+          if (examExtra) examExtra.classList.toggle('hidden', !isExam);
+          refreshSlot(slotEl);
+
+          const syncedPayload = buildSlotSavePayload(slotEl);
+          slotEl.dataset.lastSavedExamStart = syncedPayload.isExam ? (syncedPayload.start || '') : '';
+          slotEl.dataset.lastSavedExamEnd = syncedPayload.isExam ? (syncedPayload.end || '') : '';
+          slotEl._lastSavedSignature = slotPayloadSignature(syncedPayload);
+        });
+      }
+
       function updateCountdown(countdownEl) {
         const examDate = countdownEl.dataset.examDate;
         if (!examDate) return;
@@ -1471,14 +1700,14 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       function applySlotColor(slotEl) {
         const { isExam, target } = getSlotState(slotEl);
         const meta = ENTRY_META[target];
-        const examOutline = rgba(EXAM_OUTLINE, 0.88) || 'rgba(250,145,137,0.88)';
+        const examOutline = rgba(EXAM_OUTLINE, 0.96) || 'rgba(250,145,137,0.96)';
         if (!meta || !meta.color) {
           applySlotTextThemeFromColor(slotEl, isExam ? EXAM_OUTLINE : null, isExam);
           slotEl.style.background = isExam
             ? darken(EXAM_OUTLINE, 0.24)
             : 'var(--surface-soft)';
           slotEl.style.borderColor = isExam ? examOutline : 'var(--border)';
-          slotEl.style.outline = isExam ? '2px solid ' + examOutline : 'none';
+          slotEl.style.outline = isExam ? '3px solid ' + examOutline : 'none';
           slotEl.style.outlineOffset = isExam ? '-2px' : '0';
           slotEl.style.boxShadow = isExam
             ? ('0 0 12px ' + (rgba(EXAM_OUTLINE, 0.2) || 'rgba(236,72,153,0.2)'))
@@ -1491,7 +1720,7 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
           ? ('linear-gradient(155deg,' + darken(base, 0.2) + ',' + darken(base, 0.32) + ')')
           : ('linear-gradient(155deg,' + darken(base, 0.08) + ',' + darken(base, 0.16) + ')');
         slotEl.style.borderColor = isExam ? examOutline : 'var(--border)';
-        slotEl.style.outline = isExam ? '2px solid ' + examOutline : 'none';
+        slotEl.style.outline = isExam ? '3px solid ' + examOutline : 'none';
         slotEl.style.outlineOffset = isExam ? '-2px' : '0';
         slotEl.style.boxShadow = isExam
           ? ('0 0 14px ' + rgba(base, 0.18))
@@ -1503,16 +1732,16 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         const meta = ENTRY_META[target];
         const timeLabel = isExam ? buildExamTimeLabel(start, end) : '';
         const main = slotEl.querySelector('.slot-view-main');
-        const badge = slotEl.querySelector('.slot-view-badge');
-        const timeEl = slotEl.querySelector('.slot-view-time');
+        const labelTimeEl = slotEl.querySelector('.calendar-slot-label-time');
         const noteEl = slotEl.querySelector('.slot-view-note');
         const countdownEl = slotEl.querySelector('.slot-countdown');
 
         main.textContent = meta ? meta.label : 'No course selected';
         main.classList.toggle('slot-view-empty', !meta);
-        badge.classList.toggle('hidden', !isExam);
-        timeEl.classList.toggle('hidden', !timeLabel);
-        timeEl.textContent = timeLabel;
+        if (labelTimeEl) {
+          labelTimeEl.classList.toggle('hidden', !timeLabel);
+          labelTimeEl.textContent = timeLabel;
+        }
         noteEl.classList.toggle('hidden', !(isExam && note));
         noteEl.textContent = isExam && note ? note : '';
         countdownEl.classList.toggle('hidden', !isExam);
@@ -1591,30 +1820,65 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       }
 
       async function saveSlot(slotEl, { silent = false } = {}) {
-        const { isExam, target, note, start, end } = getSlotState(slotEl);
-        const safeStart = start === null ? '' : start;
-        const safeEnd = end === null ? '' : end;
+        if (!slotEl) return false;
+        const payload = buildSlotSavePayload(slotEl);
+        const signature = slotPayloadSignature(payload);
+        if (slotEl._lastSavedSignature === signature) {
+          debugSave('save skip unchanged', slotEl);
+          return true;
+        }
         const nextVersion = Math.max((slotEl._saveVersion || 0) + 1, Date.now() * 1000);
         slotEl._saveVersion = nextVersion;
+        const target = payload.sectionId
+          ? ('section:' + payload.sectionId)
+          : payload.courseId
+            ? ('course:' + payload.courseId)
+            : 'none';
+        debugSave(
+          'save send',
+          slotEl,
+          'v=' + nextVersion + ' exam=' + (payload.isExam ? '1' : '0') + ' target=' + target + ' start=' + (payload.start || '∅') + ' end=' + (payload.end || '∅')
+        );
 
-        const parsed = parseEntry(target);
         const fd = new FormData();
         fd.append('blocusId', blocusId);
         fd.append('day', slotEl.dataset.day);
         fd.append('period', slotEl.dataset.period);
-        fd.append('courseId', parsed.courseId || '');
-        fd.append('sectionId', parsed.sectionId || '');
-        fd.append('isExam', isExam ? '1' : '0');
-        fd.append('examNote', note);
-        fd.append('examStartTime', safeStart);
-        fd.append('examEndTime', safeEnd);
+        fd.append('courseId', payload.courseId);
+        fd.append('sectionId', payload.sectionId);
+        fd.append('isExam', payload.isExam ? '1' : '0');
+        fd.append('examNote', payload.note);
+        fd.append('examStartTime', payload.start);
+        fd.append('examEndTime', payload.end);
         fd.append('clientUpdatedAt', String(nextVersion));
 
         const response = await fetch(BASE + '/api/blocus/slot/update', { method: 'POST', body: fd, keepalive: true });
         if (!response.ok) {
-          if (!silent) alert(await response.text() || 'Could not save slot.');
+          const message = await response.text() || 'Could not save slot.';
+          debugSave('save failed', slotEl, 'status=' + response.status + ' message=' + message);
+          if (!silent) alert(message);
           return false;
         }
+        let responseJson = null;
+        try {
+          responseJson = await response.json();
+        } catch {
+          responseJson = null;
+        }
+        if (responseJson && responseJson.day && responseJson.slots) {
+          applyServerSlotSnapshot(responseJson.day, responseJson.slots);
+          debugSave('save ok', slotEl, 'v=' + nextVersion + ' synced day=' + responseJson.day);
+          return true;
+        }
+        if (payload.isExam) {
+          slotEl.dataset.lastSavedExamStart = payload.start || '';
+          slotEl.dataset.lastSavedExamEnd = payload.end || '';
+        } else {
+          slotEl.dataset.lastSavedExamStart = '';
+          slotEl.dataset.lastSavedExamEnd = '';
+        }
+        slotEl._lastSavedSignature = signature;
+        debugSave('save ok', slotEl, 'v=' + nextVersion + ' start=' + (payload.start || '∅') + ' end=' + (payload.end || '∅'));
         return true;
       }
 
@@ -1623,6 +1887,7 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
         const isExam = input.value === '__exam__';
         slotEl.querySelector('.exam-extra').classList.toggle('hidden', !isExam);
         refreshSlot(slotEl);
+        debugSave('input main change', slotEl, 'value=' + input.value);
         queueSlotSave(slotEl, 0);
       }
 
@@ -1637,25 +1902,47 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
             slotEl._saveTimer = null;
             saveSlot(slotEl);
           }, delay);
+          debugSave('save queued', slotEl, 'delay=' + delay + 'ms');
           return;
         }
+        debugSave('save queued', slotEl, 'delay=0ms');
         saveSlot(slotEl);
       }
 
       function saveSlotFromInput(input, defer = false) {
         const slotEl = input.closest('.calendar-slot');
         refreshSlot(slotEl);
+        debugSave('input change', slotEl, 'field=' + input.className + ' value=' + (input.value || ''));
         queueSlotSave(slotEl, defer ? 260 : 0);
       }
 
-      function flushPendingSlotSaves() {
+      function persistDirtySlots(source = 'manual') {
+        let dirty = 0;
         document.querySelectorAll('.calendar-slot').forEach(slotEl => {
           if (slotEl._saveTimer) {
             clearTimeout(slotEl._saveTimer);
             slotEl._saveTimer = null;
-            saveSlot(slotEl);
+          }
+          const currentSignature = slotPayloadSignature(buildSlotSavePayload(slotEl));
+          if (currentSignature !== slotEl._lastSavedSignature) {
+            dirty += 1;
+            saveSlot(slotEl, { silent: true });
           }
         });
+        debugSave('persist dirty', null, 'source=' + source + ' dirty=' + dirty);
+      }
+
+      function startEditAutosave() {
+        if (editAutosaveInterval) return;
+        editAutosaveInterval = setInterval(() => persistDirtySlots('interval'), 1200);
+        debugSave('autosave start');
+      }
+
+      function stopEditAutosave() {
+        if (!editAutosaveInterval) return;
+        clearInterval(editAutosaveInterval);
+        editAutosaveInterval = null;
+        debugSave('autosave stop');
       }
 
       async function applyBatchAssignment() {
@@ -1704,10 +1991,18 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       }
 
       function setMode(mode) {
+        const previousMode = document.body.dataset.blocusMode || 'view';
         const normalized = mode === 'edit' ? 'edit' : 'view';
         if (normalized !== 'edit') {
           multiSelectEnabled = false;
           clearBatchSelection(false);
+        }
+        if (normalized === 'edit') {
+          startEditAutosave();
+        } else {
+          stopEditAutosave();
+          if (previousMode === 'edit') persistDirtySlots('mode-switch');
+          document.querySelectorAll('.calendar-slot').forEach(refreshSlot);
         }
         document.body.dataset.blocusMode = normalized;
         modeViewBtn.classList.toggle('active', normalized === 'view');
@@ -1797,18 +2092,20 @@ function renderBlocus(user, blocus, courses, sections, slots, basePath = '') {
       batchTargetSelect.addEventListener('change', updateBatchUi);
       batchApplyBtn.addEventListener('click', applyBatchAssignment);
       batchClearSelectionBtn.addEventListener('click', () => clearBatchSelection());
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') flushPendingSlotSaves();
-      });
-      window.addEventListener('beforeunload', flushPendingSlotSaves);
 
       const initialMode = localStorage.getItem(MODE_STORAGE_KEY) || 'view';
       setMode(initialMode);
-      document.querySelectorAll('.calendar-slot').forEach(slotEl => {
+      const allSlots = Array.from(document.querySelectorAll('.calendar-slot'));
+      allSlots.forEach(slotEl => {
         refreshSlot(slotEl);
+        const initialPayload = buildSlotSavePayload(slotEl);
+        slotEl.dataset.lastSavedExamStart = initialPayload.isExam ? (initialPayload.start || '') : '';
+        slotEl.dataset.lastSavedExamEnd = initialPayload.isExam ? (initialPayload.end || '') : '';
+        slotEl._lastSavedSignature = slotPayloadSignature(initialPayload);
         updateSlotSelectorLabel(slotEl, false);
         slotEl.addEventListener('click', handleSlotTileClick);
       });
+      debugSave('debug initialized', null, 'slots=' + allSlots.length);
       document.querySelectorAll('.course-color-wrap input[type="color"]').forEach(syncPresetFromInput);
       document.querySelectorAll('.slot-countdown:not(.hidden)').forEach(updateCountdown);
     </script>
@@ -1924,7 +2221,7 @@ function renderBoard(user, board, lists, cards, basePath = '') {
   <div id="confirmModal" class="modal">
     <div class="modal-content" style="max-width:400px">
       <h3>⚠ Confirm Deletion</h3>
-      <p id="confirmMessage" style="color:#aaa;margin:20px 0"></p>
+      <p id="confirmMessage" style="color:#44474b;margin:20px 0"></p>
       <div class="btn-group">
         <button id="confirmYes" class="btn-danger">Delete</button>
         <button id="confirmNo" onclick="hideConfirm()">Cancel</button>
@@ -2341,16 +2638,16 @@ function darkenHex(hex, amount = 0.2) {
 }
 
 function getSlotStyle(color, isExam) {
-  const examOutline = rgbaFromHex(BLOCUS_EXAM_OUTLINE, 0.88);
+  const examOutline = rgbaFromHex(BLOCUS_EXAM_OUTLINE, 0.96);
   if (!color) {
     if (!isExam) return '';
-    return `background:${darkenHex(BLOCUS_EXAM_OUTLINE, 0.24)};border-color:${examOutline};outline:2px solid ${examOutline};outline-offset:-2px;box-shadow:0 0 12px ${rgbaFromHex(BLOCUS_EXAM_OUTLINE, 0.2)};`;
+    return `background:${darkenHex(BLOCUS_EXAM_OUTLINE, 0.24)};border-color:${examOutline};outline:3px solid ${examOutline};outline-offset:-2px;box-shadow:0 0 12px ${rgbaFromHex(BLOCUS_EXAM_OUTLINE, 0.2)};`;
   }
   const bg = isExam
     ? `linear-gradient(155deg,${darkenHex(color, 0.2)},${darkenHex(color, 0.32)})`
     : `linear-gradient(155deg,${darkenHex(color, 0.08)},${darkenHex(color, 0.16)})`;
   const borderColor = isExam ? examOutline : 'var(--border)';
-  const outlineStyle = isExam ? `outline:2px solid ${examOutline};outline-offset:-2px;` : 'outline:none;outline-offset:0;';
+  const outlineStyle = isExam ? `outline:3px solid ${examOutline};outline-offset:-2px;` : 'outline:none;outline-offset:0;';
   const shadowStyle = isExam
     ? `box-shadow:0 0 14px ${rgbaFromHex(color, 0.18)};`
     : 'box-shadow:none;';
